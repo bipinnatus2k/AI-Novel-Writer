@@ -170,16 +170,28 @@ export async function guardDirectoryGeneration(
 
 // ===== Guard 3：章节写稿前 → 校验章节蓝图存在 =====
 
+/** 章节写作门禁选项。 */
+export interface ChapterWritingGuardOptions {
+  /**
+   * 要求前一章已定稿且后处理全部通过。
+   * 自由写作（按蓝图写任意未定稿章）不再要求；批量自动定稿等需要逐章连续
+   * 定稿的流程保留该门禁，避免权威定稿出现缺口。
+   */
+  requirePreviousFinalized?: boolean
+}
+
 /**
  * 章节写稿前的前置校验：
  * 1. 要求 blueprints/ 目录中存在至少一个章节蓝图 JSON 文件。
- * 2. 如果指定了章节号且 > 1，要求前一章已定稿（存在于 manuscript/ 中），否则上下文会断裂。
+ * 2. 仅在 requirePreviousFinalized 时要求前一章已定稿；自由写作允许前章停留
+ *    在草稿状态，生成时会自动把前章最新草稿作为未定稿来源注入上下文。
  */
 export async function guardChapterWriting(
   targetChapterNumber?: number,
   expectedProjectPath?: string,
   expectedProjectSession?: ProjectSessionContext,
   uiLocale: Locale = useLocaleStore.getState().locale,
+  options: ChapterWritingGuardOptions = {},
 ): Promise<GuardResult> {
   const captured = captureGuardProject(expectedProjectPath, expectedProjectSession)
   if (!captured) {
@@ -216,8 +228,8 @@ export async function guardChapterWriting(
     }
   }
 
-  // 如果指定了且不是第一章，则必须保证前一章已经存在正文库（定稿状态）
-  if (targetChapterNumber && targetChapterNumber > 1) {
+  // 逐章连续定稿流程：前一章必须已定稿且后处理全部通过，保证上下文连贯
+  if (options.requirePreviousFinalized && targetChapterNumber && targetChapterNumber > 1) {
     const prevChapter = targetChapterNumber - 1
     const prevDraftMeta = await ipc.invokeWithProjectSession(projectSession, 'db:draft-get-finalized', prevChapter, projectPath)
     if (!prevDraftMeta) {

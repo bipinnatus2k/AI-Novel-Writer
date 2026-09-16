@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Sparkles, Search, BadgeCheck, Save, FileStack, FileText, Wrench, Check } from 'lucide-react'
+import { Sparkles, Search, BadgeCheck, Save, FileStack, FileText, Wrench, Check, LockOpen } from 'lucide-react'
 
 import { useProjectStore } from '../../stores/project-store'
 import { registerEditorExitSaveHandler, useEditorStore } from '../../stores/editor-store'
@@ -36,6 +36,7 @@ import {
   isProjectSessionCurrent,
   isProjectSessionPath,
 } from '../project-session-gate'
+import { unlockFinalizedChapter } from '../panels/sidebar/finalized-chapter-unlock'
 
 const DRAFT_STATUS_EN: Record<string, string> = {
   draft: 'Draft',
@@ -93,6 +94,8 @@ function DraftEditorSession({ tabId, filePath, content, projectKey }: Props) {
 
   // 后处理失败状态（用于控制是否展示修复按钮）
   const [hasProcessFailure, setHasProcessFailure] = useState(false)
+  // 当前项目最高的已定稿章节号；只有最高定稿章允许解锁为草稿
+  const [maxFinalizedChapter, setMaxFinalizedChapter] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -109,6 +112,16 @@ function DraftEditorSession({ tabId, filePath, content, projectKey }: Props) {
       if (cancelled || !isProjectSessionCurrent(projectSession)) return
       const bp = Array.isArray(bps) ? bps.find((b: unknown) => (b as { chapterNumber?: number }).chapterNumber === m.chapterNumber) : null
       setMeta({ ...m, chapterTitle: bp ? (bp as { title?: string }).title : undefined, filePath, fileName: `v${m.version}`, createdAt: m.updatedAt ?? m.createdAt })
+      try {
+        const maxFinalized = await ipc.invokeWithProjectSession(
+          projectSession,
+          'db:draft-get-max-finalized-chapter',
+          projectSession.projectPath,
+        )
+        if (!cancelled && isProjectSessionCurrent(projectSession)) {
+          setMaxFinalizedChapter(Number(maxFinalized) || 0)
+        }
+      } catch { /* 解锁入口按不可用处理 */ }
       // 使用 DB 化的虚拟 chapterDir（用于 draft-index 兼容层解析章节号）
       const chapterDir = `vela://draft/ch${m.chapterNumber}`
       // 检查待合并修稿
@@ -472,6 +485,22 @@ function DraftEditorSession({ tabId, filePath, content, projectKey }: Props) {
     }
   }, [currentProject, isChapterBusy, locale, meta, projectKey, projectMatches, text])
 
+  /** 解锁定稿 — 把最高定稿章回退为可编辑草稿（主进程负责拒绝非最高章） */
+  const doUnlockFinalization = useCallback(async () => {
+    const projectSession = captureProjectSession(currentProject)
+    if (!projectMatches || !currentProject || !meta || !projectSession || !isProjectSessionPath(projectSession, projectKey)) return
+    await unlockFinalizedChapter({
+      project: currentProject,
+      projectPath: projectKey,
+      draftId: meta.id,
+      chapterNumber: meta.chapterNumber,
+      displayName: text(
+        `第 ${meta.chapterNumber} 章 ${meta.chapterTitle || ''}`.trim(),
+        `Chapter ${meta.chapterNumber} ${meta.chapterTitle || 'Untitled'}`.trim(),
+      ),
+    })
+  }, [currentProject, meta, projectKey, projectMatches, text])
+
   /** 打开待合并修稿 —— 弹出式合并视图，不占用原草稿 Tab */
   const openPendingRevision = async (rev: RevisionEntry) => {
     const projectSession = captureProjectSession(currentProject)
@@ -822,6 +851,19 @@ function DraftEditorSession({ tabId, filePath, content, projectKey }: Props) {
               >
                 <Wrench size={11} />
                 {text('修复定稿', 'Repair finalization')}
+              </Button>
+            )}
+            {/* 最高定稿章 → 解锁为草稿，恢复可编辑 */}
+            {status === 'finalized' && meta && meta.chapterNumber === maxFinalizedChapter && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void doUnlockFinalization()}
+                disabled={isChapterBusy}
+                title={text('解除只读并把本章回退为草稿；实体稿与知识库投影会被清理', 'Remove read-only and revert this chapter to a draft; its manuscript and knowledge projections are cleaned up')}
+              >
+                <LockOpen size={11} />
+                {text('解锁为草稿', 'Unlock to draft')}
               </Button>
             )}
           </div>

@@ -596,7 +596,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
         .withShortSummary('')
     }
 
-    const selectedCandidateDrafts = this.selectedCandidateDrafts
+    const selectedCandidateDrafts: SelectedCandidateDraft[] = this.selectedCandidateDrafts
       .filter(candidate => candidate.chapterNumber < this.chapterInfo.chapterNumber)
       .sort((left, right) => left.chapterNumber - right.chapterNumber)
     const previousChapterNumber = this.chapterInfo.chapterNumber - 1
@@ -609,10 +609,37 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
       && Boolean(source.content.trim())
     ))
     if (!isFirstChapter && !hasRequiredPreviousCandidate && !hasRequiredFinalizedSource) {
-      throw new Error(uiText(
-        `无法固定第 ${previousChapterNumber} 章的必需定稿来源，已停止生成。请修复或重新定稿该章后再试。`,
-        `The required finalized source for Chapter ${previousChapterNumber} could not be fixed, so generation stopped. Repair or re-finalize that chapter and try again.`,
-      ))
+      // 自由写作：前一章尚未定稿时，回退读取其最新草稿作为未定稿来源注入上下文；
+      // 前章只有蓝图、没有任何正文时按蓝图与项目事实直接生成，不再强制中断。
+      const finalizedMeta = await ipc.invokeWithProjectSession(
+        projectSession,
+        'db:draft-get-finalized',
+        previousChapterNumber,
+        expectedProjectPath,
+      )
+      if (finalizedMeta) {
+        throw new Error(uiText(
+          `无法固定第 ${previousChapterNumber} 章的定稿来源，已停止生成。请在草稿箱修复该章定稿后再试。`,
+          `The finalized source for Chapter ${previousChapterNumber} could not be fixed, so generation stopped. Repair that finalization in Drafts and try again.`,
+        ))
+      }
+      const fallbackCandidate = await this.readPreviousDraftCandidate(
+        previousChapterNumber,
+        projectSession,
+        expectedProjectPath,
+      )
+      if (fallbackCandidate) {
+        selectedCandidateDrafts.push(fallbackCandidate)
+        callbacks.log(uiText(
+          `  前一章尚未定稿：已将第 ${previousChapterNumber} 章最新草稿 v${fallbackCandidate.version} 作为未定稿来源注入`,
+          `  Previous chapter is not finalized: its latest draft v${fallbackCandidate.version} was injected as an unfinalized source`,
+        ))
+      } else {
+        callbacks.log(uiText(
+          `  前一章尚无任何正文：本章将仅依据蓝图与项目事实自由生成`,
+          `  The previous chapter has no prose yet: this chapter will be generated freely from its blueprint and project facts`,
+        ))
+      }
     }
     const chapterMaterials = assembleChapterMaterials({
       writingLanguage,
@@ -1294,6 +1321,41 @@ ${visibleTail}`,
         '（角色资料读取失败；未把旧 currentState 或 characters_arch 当作作者事实）',
         '(character profiles unavailable; legacy currentState and characters_arch were not treated as author facts)',
       )
+    }
+  }
+
+  /**
+   * 自由写作回退：前一章未定稿时读取其最新草稿作为未定稿候选来源。
+   * 归档稿不作为来源；读取失败时返回 null，由调用方按纯蓝图模式继续。
+   */
+  private async readPreviousDraftCandidate(
+    previousChapterNumber: number,
+    projectSession: ProjectSessionContext,
+    projectPath: string,
+  ): Promise<SelectedCandidateDraft | null> {
+    try {
+      const meta = await ipc.invokeWithProjectSession(
+        projectSession,
+        'db:draft-get-latest',
+        previousChapterNumber,
+        projectPath,
+      )
+      if (!meta || meta.status === 'finalized' || meta.status === 'archived') return null
+      const full = await ipc.invokeWithProjectSession(
+        projectSession,
+        'db:draft-get-full',
+        meta.id,
+        projectPath,
+      )
+      if (!full || !full.content.trim()) return null
+      return {
+        chapterNumber: full.chapterNumber,
+        draftId: full.id,
+        version: full.version,
+        content: full.content,
+      }
+    } catch {
+      return null
     }
   }
 

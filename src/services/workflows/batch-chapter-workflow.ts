@@ -162,12 +162,19 @@ async function runOneBatchChapter(
   draftReviewCandidates: Map<number, SelectedCandidateDraft>,
 ): Promise<string> {
   const projectSession = requireWorkflowProjectSession(context)
-  // 草稿待审模式不会把本批次前一章变成定稿事实；首章仍遵守外部连续性门禁，
+  // 草稿待审模式不会把本批次前一章变成定稿事实；首章不再要求外部前章定稿，
   // 后续章只重复校验蓝图/角色等全局前置条件。
+  // 自动定稿模式逐章提交权威事实，保留"前一章必须定稿"的门禁防止权威缺口。
   const guardedChapterNumber = completionMode === 'draft_review' && chapterNumber > batchStartChapterNumber
     ? undefined
     : chapterNumber
-  const guard = await guardChapterWriting(guardedChapterNumber, projectPath, projectSession)
+  const guard = await guardChapterWriting(
+    guardedChapterNumber,
+    projectPath,
+    projectSession,
+    uiLocale,
+    completionMode === 'auto_finalize' ? { requirePreviousFinalized: true } : {},
+  )
   if (!guard.ok) {
     throw new Error(uiLocale === 'en-US'
       ? `Chapter ${chapterNumber} does not meet the writing prerequisites.`

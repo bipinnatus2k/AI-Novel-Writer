@@ -87,4 +87,26 @@ export function registerFinalizationController(): void {
       return { success: false, committed: false, error: String(error) }
     }
   })
+
+  ipcMain.handle('finalization:unlock', async (
+    _event,
+    draftId: unknown,
+    context: unknown,
+  ) => {
+    try {
+      if (!Number.isInteger(draftId) || (draftId as number) < 1) {
+        throw new Error('缺少有效的草稿身份，已拒绝解锁')
+      }
+      if (!isProjectSessionContext(context)) {
+        throw new Error('缺少项目会话，已拒绝解锁定稿')
+      }
+      const active = projectAccess.assertCurrentProjectContext(context, getCurrentProjectPath())
+      return await finalizationService.unlock({
+        projectRoot: active.rootPath,
+        draftId: draftId as number,
+      })
+    } catch (error) {
+      return { success: false, draftId: -1, error: String(error) }
+    }
+  })
 }

@@ -1170,7 +1170,7 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
     })
 
     await expect(command.execute({ step: {}, context, callbacks }))
-      .rejects.toThrow(/无法固定第 1 章的必需定稿来源/u)
+      .rejects.toThrow(/无法固定第 1 章的定稿来源/u)
 
     expect(observedTask).toBeUndefined()
     expect(runtime.complete).not.toHaveBeenCalled()
@@ -1179,19 +1179,27 @@ describe('GenerateDraftCommand generation runtime boundary', () => {
     expect(invoke).not.toHaveBeenCalledWith('db:draft-get-full', 77, projectPath, expect.anything())
   })
 
-  it('stops before the provider when the required previous finalized source is missing', async () => {
-    const runtime = fakeOutcomes(outcome('不应生成。'.repeat(125), 'stop'))
+  it('writes freely from the blueprint when the previous chapter has no prose yet', async () => {
+    let observedTask: GenerationTask | undefined
+    const runtime = fakeRuntime((_attempt, task) => {
+      observedTask = task
+      return outcome('新章正文。'.repeat(125), 'stop')
+    })
     const { invoke, context, callbacks, command } = setup({
       runtime,
       chapterNumber: 2,
       wordsTarget: 500,
     })
 
-    await expect(command.execute({ step: {}, context, callbacks }))
-      .rejects.toThrow(/无法固定第 1 章的必需定稿来源/u)
+    await command.execute({ step: {}, context, callbacks })
 
-    expect(runtime.complete).not.toHaveBeenCalled()
-    expect(invoke).not.toHaveBeenCalledWith('db:draft-create', expect.anything(), expect.anything(), expect.anything())
+    // 自由写作：前一章没有任何正文时不再中断，按蓝图与项目事实直接生成
+    expect(runtime.complete).toHaveBeenCalled()
+    expect(observedTask).toBeDefined()
+    expect(observedTask?.messages.find(message => message.role === 'user')?.content)
+      .not.toContain('【未定稿候选')
+    expect(invoke).toHaveBeenCalledWith('db:draft-get-latest', 1, projectPath, expect.anything())
+    expect(invoke).toHaveBeenCalledWith('db:draft-create', expect.anything(), expect.anything(), expect.anything())
   })
 
   it('recovers the previous canonical source when a derived projection points at an invalid receipt', async () => {

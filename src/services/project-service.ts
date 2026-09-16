@@ -26,6 +26,7 @@ import {
 } from '../shared/project-session-context'
 import {
   reconcileFinalizationCompletion,
+  reconcileFinalizationUnlock,
   type FinalizationCompletion,
   type FinalizationSnapshot,
 } from './finalization-snapshot'
@@ -138,6 +139,39 @@ export function initProjectService(): void {
       // 只用完成事件携带的不可变快照结算 tab。不得为此回读数据库正文，
       // 否则完成事件可能覆盖用户在定稿等待期间的新编辑。
       syncFinalizedDraftTab(payload)
+
+      await Promise.all([
+        useDraftStore.getState().loadChapterDrafts(
+          payload.chapterNumber,
+          payload.projectPath,
+          payload.projectSession,
+        ),
+        useCharacterStore.getState().load(payload.projectPath, payload.projectSession),
+        useProjectStore.getState().refreshFileTree(
+          payload.projectPath,
+          undefined,
+          payload.projectSession,
+        ),
+      ])
+      if (!isProjectSessionCurrent(payload.projectSession)) return
+      },
+    ))
+  )
+
+  // 定稿解锁 → 结算编辑器 Tab 回到草稿态 + 刷新草稿/角色/文件树
+  disposers.push(
+    globalEventBus.on('FINALIZE_UNLOCKED', (payload) => runProjectEventTask(
+      () => text('解锁定稿后的项目刷新失败', 'Could not refresh project data after unlocking the finalized chapter'),
+      async () => {
+      const project = useProjectStore.getState().currentProject
+      if (!project || !sameProjectSessionContext(
+        projectSessionContextFromProject(project),
+        payload.projectSession,
+      )) return
+
+      useEditorStore.setState(state => ({
+        tabs: state.tabs.map(tab => reconcileFinalizationUnlock(tab, payload)),
+      }))
 
       await Promise.all([
         useDraftStore.getState().loadChapterDrafts(

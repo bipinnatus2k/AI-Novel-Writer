@@ -1,4 +1,4 @@
-import type { FinalizationResult } from '../../electron/services/finalization-service'
+import type { FinalizationResult, FinalizationUnlockResult } from '../../electron/services/finalization-service'
 import { getActiveProjectSessionContext, sameProjectSessionContext } from '../shared/project-session-context'
 import type { ProjectSessionContext } from '../shared/ipc-channels'
 import type { FinalizationSnapshot } from './finalization-snapshot'
@@ -42,4 +42,23 @@ export async function retryFinalizationPublication(
     finalizationId,
     projectSession,
   ) as Promise<FinalizationResult>
+}
+
+/**
+ * 解锁定稿：把最高定稿章回退为可编辑草稿。只传草稿身份，正文与投影清理
+ * 全部由主进程按 SQLite 事实源处理。
+ */
+export async function unlockFinalizedDraft(
+  draftId: number,
+  projectSession: ProjectSessionContext,
+): Promise<FinalizationUnlockResult> {
+  const currentSession = getActiveProjectSessionContext()
+  if (!sameProjectSessionContext(projectSession, currentSession)) {
+    throw new Error('项目会话已变化，已拒绝解锁定稿')
+  }
+  return getVelaApi().invoke(
+    'finalization:unlock',
+    draftId,
+    projectSession,
+  ) as Promise<FinalizationUnlockResult>
 }

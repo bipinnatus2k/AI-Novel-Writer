@@ -3,13 +3,16 @@ import { createHash, randomUUID } from 'node:crypto'
 import {
   FinalizationRepository,
   type FinalizationRecord,
+  type FinalizationUnlockProjection,
   type PublicationStatus,
 } from '../repositories/finalization-repository'
 import {
   manuscriptPublisher,
+  removePublishedManuscript,
   resolveManuscriptTarget,
   type PublishManuscriptInput,
 } from './manuscript-publisher'
+import { knowledgeBaseLoader } from './knowledge-base-loader'
 
 export interface FinalizationRequest {
   /** 已由 ProjectAccess 验证并 canonicalize 的项目根目录。 */
@@ -25,6 +28,27 @@ export interface FinalizationRetryRequest {
   /** 已由 ProjectAccess 验证并 canonicalize 的项目根目录。 */
   projectRoot: string
   finalizationId: string
+}
+
+export interface FinalizationUnlockRequest {
+  /** 已由 ProjectAccess 验证并 canonicalize 的项目根目录。 */
+  projectRoot: string
+  draftId: number
+}
+
+export interface FinalizationUnlockResult {
+  success: boolean
+  draftId: number
+  chapterNumber?: number
+  finalizationId?: string
+  /** 投影清理失败时的警告；事实回退已提交，失败项可按冻结身份人工或重试清理。 */
+  warnings?: string[]
+  error?: string
+}
+
+export interface FinalizationUnlockCleaner {
+  removeManuscript(projectRoot: string, targetFileName: string): Promise<void>
+  removeKnowledgeDocument(projectRoot: string, documentId: string): Promise<void>
 }
 
 export interface FinalizationResult {
@@ -46,6 +70,20 @@ export interface FinalizationPublisher {
 export interface FinalizationServiceOptions {
   createFinalizationId?: () => string
   publisher?: FinalizationPublisher
+  unlockCleaner?: FinalizationUnlockCleaner
+}
+
+const defaultUnlockCleaner: FinalizationUnlockCleaner = {
+  removeManuscript: removePublishedManuscript,
+  async removeKnowledgeDocument(projectRoot, documentId) {
+    const result = await knowledgeBaseLoader.run((kb) => kb.removeDocument(documentId, projectRoot))
+    if (result !== true) {
+      if (result && typeof result === 'object' && 'errorCode' in result) {
+        throw new Error('知识库原生模块不可用')
+      }
+      throw new Error('知识库未确认文档已删除')
+    }
+  },
 }
 
 function toResult(record: FinalizationRecord, success: boolean, error?: string): FinalizationResult {
@@ -91,10 +129,12 @@ function snapshotIntegrityError(record: FinalizationRecord): string | null {
 export class FinalizationService {
   private readonly createFinalizationId: () => string
   private readonly publisher: FinalizationPublisher
+  private readonly unlockCleaner: FinalizationUnlockCleaner
 
   constructor(options: FinalizationServiceOptions = {}) {
     this.createFinalizationId = options.createFinalizationId ?? randomUUID
     this.publisher = options.publisher ?? manuscriptPublisher
+    this.unlockCleaner = options.unlockCleaner ?? defaultUnlockCleaner
   }
 
   async finalize(request: FinalizationRequest): Promise<FinalizationResult> {
@@ -168,6 +208,44 @@ export class FinalizationService {
       return toResult(record, true)
     }
     return this.publishCommitted(request.projectRoot, record)
+  }
+
+  /**
+   * 解锁定稿：数据库事务内把最高定稿章回退为草稿（事实源变更），事务外按冻结
+   * 身份尽力清理实体稿文件与知识库文档这两个可恢复投影。清理失败不回滚事实，
+   * 只作为警告返回。
+   */
+  async unlock(request: FinalizationUnlockRequest): Promise<FinalizationUnlockResult> {
+    let projection: FinalizationUnlockProjection
+    try {
+      projection = FinalizationRepository.unlock(request.draftId)
+    } catch (error) {
+      return { success: false, draftId: request.draftId, error: String(error) }
+    }
+
+    const warnings: string[] = []
+    if (projection.targetFileName) {
+      try {
+        await this.unlockCleaner.removeManuscript(request.projectRoot, projection.targetFileName)
+      } catch (error) {
+        warnings.push(`实体稿清理失败：${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    if (projection.knowledgeDocumentId) {
+      try {
+        await this.unlockCleaner.removeKnowledgeDocument(request.projectRoot, projection.knowledgeDocumentId)
+      } catch (error) {
+        warnings.push(`知识库清理失败：${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+
+    return {
+      success: true,
+      draftId: projection.draftId,
+      chapterNumber: projection.chapterNumber,
+      finalizationId: projection.finalizationId,
+      ...(warnings.length > 0 ? { warnings } : {}),
+    }
   }
 
   private async publishCommitted(projectRoot: string, record: FinalizationRecord): Promise<FinalizationResult> {

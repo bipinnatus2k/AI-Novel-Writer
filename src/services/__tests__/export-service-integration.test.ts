@@ -32,6 +32,7 @@ import { nodeTestSecureFileSystem } from '../../../test/helpers/node-test-secure
 import { setActiveProjectSessionContext } from '../../shared/project-session-context'
 import type { ProjectSessionContext } from '../../shared/ipc-channels'
 import { exportNovel } from '../export-service'
+import { countDraftUnits } from '../../shared/draft-units'
 
 const temporaryRoots: string[] = []
 
@@ -71,18 +72,29 @@ describe('authoritative finalized export integration', () => {
       { chapterNumber: 4, title: '归来', content: '第四章：归航。' },
     ]
     for (const fact of facts) {
-      const contentId = Number(insertContent.run('old draft').lastInsertRowid)
+      const contentId = Number(insertContent.run(fact.content).lastInsertRowid)
       const draftId = Number(insertDraft.run(fact.chapterNumber, 1, contentId).lastInsertRowid)
-      FinalizationRepository.commit({
-        finalizationId: `finalization-${fact.chapterNumber}`,
+      // 稀疏定稿是旧版导入等遗留产物；普通定稿提交已被连续性守卫阻断，
+      // 这里直接写入事实行来构造导出读取所需的稀疏场景。
+      db.prepare(`
+        UPDATE drafts SET status = 'finalized', word_count = ? WHERE id = ?
+      `).run(countDraftUnits(fact.content), draftId)
+      db.prepare(`
+        INSERT INTO finalization_outbox (
+          finalization_id, draft_id, chapter_number, chapter_title,
+          content_hash, content_revision, content_snapshot, target_file_name,
+          publication_status, last_error
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', '')
+      `).run(
+        `finalization-${fact.chapterNumber}`,
         draftId,
-        chapterNumber: fact.chapterNumber,
-        chapterTitle: fact.title,
-        content: fact.content,
-        contentHash: sha256(fact.content),
-        contentRevision: 1,
-        targetFileName: `第${fact.chapterNumber}章 ${fact.title}.txt`,
-      })
+        fact.chapterNumber,
+        fact.title,
+        sha256(fact.content),
+        1,
+        fact.content,
+        `第${fact.chapterNumber}章 ${fact.title}.txt`,
+      )
     }
 
     const grants = new ExternalFileGrantService({

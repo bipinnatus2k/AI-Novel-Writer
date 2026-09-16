@@ -2,8 +2,22 @@ import { createHash } from 'node:crypto'
 import { getProjectDb } from '../database'
 import { countDraftUnits } from '../../src/shared/draft-units'
 import { invalidateContinuityProjectionFrom } from './summary-repository'
+import { PlotTreeRepository } from './plot-tree-repository'
 
 export type PublicationStatus = 'pending' | 'published'
+
+/**
+ * 解锁定稿时冻结的投影身份。事实变更在同一个事务内完成；实体稿文件与知识库
+ * 文档由服务层在事务外按这份身份做可恢复的尽力清理。
+ */
+export interface FinalizationUnlockProjection {
+  finalizationId: string
+  draftId: number
+  chapterNumber: number
+  chapterTitle: string
+  targetFileName: string
+  knowledgeDocumentId: string
+}
 
 export interface FinalizationCommitInput {
   finalizationId: string
@@ -263,6 +277,18 @@ export class FinalizationRepository {
         throw new Error('草稿已定稿但缺少可恢复发布记录')
       }
 
+      // 定稿必须保持权威连续序列（1..N 无空洞）。自由写作允许跳过前章草稿，
+      // 但跳章定稿会在权威定稿中制造缺口，破坏导出与权威下一章推导。
+      const maxFinalizedRow = db.prepare(`
+        SELECT MAX(chapter_number) AS max_chapter FROM drafts WHERE status = 'finalized'
+      `).get() as { max_chapter: number | null }
+      const maxFinalized = maxFinalizedRow.max_chapter ?? 0
+      if (input.chapterNumber > maxFinalized + 1) {
+        throw new Error(
+          `定稿必须连续：第 ${maxFinalized + 1} 章尚未定稿，不能直接定稿第 ${input.chapterNumber} 章。`,
+        )
+      }
+
       const replacesFinalized = db.prepare(`
         SELECT 1 FROM drafts
         WHERE chapter_number = ? AND status = 'finalized' AND id <> ?
@@ -318,6 +344,60 @@ export class FinalizationRepository {
       SELECT * FROM finalization_outbox WHERE finalization_id = ?
     `).get(finalizationId) as FinalizationRow | undefined
     return row ? rowToRecord(row) : null
+  }
+
+  /**
+   * 解锁定稿（作者显式动作）：把最高定稿章的草稿事实回退为 draft，正文保持不变。
+   * 事实变更（状态、outbox、连续性投影水位、后处理记录、剧情树快照）在同一个
+   * SQLite 事务内完成；实体稿文件与知识库文档由服务层按冻结身份在事务外清理。
+   * 只允许解锁最高定稿章，保证权威定稿序列不出现缺口。
+   */
+  static unlock(draftId: number): FinalizationUnlockProjection {
+    const db = requireDatabase()
+    const transaction = db.transaction(() => {
+      const draft = db.prepare(`
+        SELECT id, chapter_number, status FROM drafts WHERE id = ?
+      `).get(draftId) as { id: number; chapter_number: number; status: string } | undefined
+      if (!draft) throw new Error(`草稿不存在：${draftId}`)
+      if (draft.status !== 'finalized') throw new Error('只有已定稿的草稿才能解锁为草稿')
+
+      const outbox = db.prepare(`
+        SELECT * FROM finalization_outbox WHERE draft_id = ?
+      `).get(draftId) as FinalizationRow | undefined
+      if (!outbox) throw new Error('草稿已定稿但缺少可恢复发布记录，无法解锁')
+
+      const maxFinalizedRow = db.prepare(`
+        SELECT MAX(chapter_number) AS max_chapter FROM drafts WHERE status = 'finalized'
+      `).get() as { max_chapter: number | null }
+      const maxFinalized = maxFinalizedRow.max_chapter ?? 0
+      if (draft.chapter_number !== maxFinalized) {
+        throw new Error(
+          `只能解锁最新的定稿章节（第 ${maxFinalized} 章）；解锁中间章会让权威定稿出现缺口。`,
+        )
+      }
+
+      db.prepare('DELETE FROM finalization_outbox WHERE draft_id = ?').run(draftId)
+      db.prepare(`
+        UPDATE drafts SET status = 'draft', updated_at = datetime('now')
+        WHERE id = ?
+      `).run(draftId)
+      invalidateContinuityProjectionFrom(db, draft.chapter_number)
+      db.prepare(`
+        DELETE FROM post_process_runs
+        WHERE trigger_source_type = 'chapter_finalize' AND trigger_source_id = ?
+      `).run(String(draft.chapter_number))
+      PlotTreeRepository.clear()
+
+      return {
+        finalizationId: outbox.finalization_id,
+        draftId,
+        chapterNumber: draft.chapter_number,
+        chapterTitle: outbox.chapter_title,
+        targetFileName: outbox.target_file_name,
+        knowledgeDocumentId: outbox.knowledge_document_id,
+      }
+    })
+    return transaction()
   }
 
   static getByDraftId(draftId: number): FinalizationRecord | null {

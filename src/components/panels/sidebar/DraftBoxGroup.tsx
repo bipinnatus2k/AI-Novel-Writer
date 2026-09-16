@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect } from 'react'
-import { ChevronRight, ChevronDown, CheckCircle2, Circle, FileText, FolderOpen, Copy, Trash2, FilePen } from 'lucide-react'
+import { ChevronRight, ChevronDown, CheckCircle2, Circle, FileText, FolderOpen, Copy, Trash2, FilePen, LockOpen } from 'lucide-react'
 import type { DraftMeta } from '../../../stores/draft-store'
 import { useDraftStore, readDraftBody } from '../../../stores/draft-store'
 import { useEditorStore } from '../../../stores/editor-store'
@@ -21,6 +21,7 @@ import {
   isProjectSessionPath,
 } from '../../project-session-gate'
 import { deleteFinalizedChapter } from './finalized-chapter-deletion'
+import { unlockFinalizedChapter } from './finalized-chapter-unlock'
 
 const DRAFT_STATUS_EN: Record<string, string> = {
   draft: 'Draft', revising: 'Revising', reviewed: 'Reviewed', finalized: 'Finalized', archived: 'Archived',
@@ -314,6 +315,17 @@ function DraftItem({
 
   const isFinalized = draft.status === 'finalized'
 
+  /** 解锁定稿：仅最高定稿章可解锁，主进程负责拒绝其他章节 */
+  const unlockDraft = async () => {
+    await unlockFinalizedChapter({
+      project: currentProject,
+      projectPath: projectKey,
+      draftId: draft.id,
+      chapterNumber: draft.chapterNumber,
+      displayName: `${chapterTitleText} v${draft.version}`,
+    })
+  }
+
   return (
     <div
       className="relative flex items-center gap-1.5 cursor-pointer hover:bg-[var(--color-hover)]"
@@ -332,6 +344,12 @@ function DraftItem({
           icon: <FolderOpen size={13} />,
           onClick: openDraft,
         },
+        ...(isFinalized ? [{
+          key: 'unlock',
+          label: text('解锁为草稿', 'Unlock to draft'),
+          icon: <LockOpen size={13} />,
+          onClick: () => void unlockDraft(),
+        }] : []),
         { key: 'div1', type: 'divider' as const },
         {
           key: 'copy-path',

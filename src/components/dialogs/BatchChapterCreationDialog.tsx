@@ -222,7 +222,14 @@ function BatchChapterCreationDialogSession({ isOpen, startChapterNumber, onClose
       setConsistencyPreflight(null)
 
       if (!isProjectSessionCurrent(projectSession)) return
-      const guard = await guardChapterWriting(frozenStart, projectPath, projectSession)
+      // 自动定稿模式在对话框层就保留前章定稿门禁，尽早给出连续性错误
+      const guard = await guardChapterWriting(
+        frozenStart,
+        projectPath,
+        projectSession,
+        locale,
+        completionMode === 'auto_finalize' ? { requirePreviousFinalized: true } : {},
+      )
       if (!isProjectSessionCurrent(projectSession)) return
       if (!guard.ok) {
         setError(frozenLocale === 'en-US'

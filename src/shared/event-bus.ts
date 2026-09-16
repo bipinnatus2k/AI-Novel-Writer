@@ -22,6 +22,8 @@ export type GlobalEventType =
   | 'ARCH_FILE_UPDATED'
   // --- 定稿完成（替代原 vela:finalize-complete） ---
   | 'FINALIZE_COMPLETE'
+  // --- 定稿解锁为草稿（作者显式解锁最高定稿章后触发） ---
+  | 'FINALIZE_UNLOCKED'
   // --- 章节删除收据变化（包括待人工确认和部分清理失败） ---
   | 'CHAPTER_DELETION_UPDATED'
   // --- 项目级事件 ---
@@ -87,6 +89,16 @@ export interface EventPayloadMap {
     publicationStatus: 'pending' | 'published'
     /** 定稿来源；批量任务不应弹出单章的“下一章创作”对话框 */
     source?: 'manual' | 'batch'
+  }
+  'FINALIZE_UNLOCKED': {
+    /** 解锁时冻结的项目路径（只作显示/定位，不是身份）。 */
+    projectPath: string
+    /** 解锁时冻结的完整项目会话，防止同路径重开后的旧事件落到新会话。 */
+    projectSession: ProjectSessionContext
+    /** 已回退为 draft 的草稿身份。 */
+    draftId: number
+    chapterNumber: number
+    chapterTitle: string
   }
   'CHAPTER_DELETION_UPDATED': {
     projectPath: string

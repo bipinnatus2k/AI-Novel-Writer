@@ -109,7 +109,6 @@ function ChapterCreationDialogSession({ isOpen, onClose, prefill }: Props) {
   const [loadedFromHistory, setLoadedFromHistory] = useState(false)
   const [loadedFromBlueprint, setLoadedFromBlueprint] = useState(false)
   const [guardError, setGuardError] = useState<string | null>(null)
-  const [authorityError, setAuthorityError] = useState<string | null>(null)
   const [authorityLoading, setAuthorityLoading] = useState(false)
   const [consistencyPreflight, setConsistencyPreflight] = useState<ConsistencyPreflightResult | null>(null)
   const [generationModelId, setGenerationModelId] = useState<string | null>(() => (
@@ -202,18 +201,15 @@ function ChapterCreationDialogSession({ isOpen, onClose, prefill }: Props) {
     }
     const initialize = async () => {
       setAuthorityLoading(true)
-      let nextChapterNumber: number
+      // 自由写作不再依赖权威序列做硬门禁；这里只用它推导默认章节号，
+      // 读取失败（如旧版异常定稿记录）时默认从第 1 章开始。
+      let nextChapterNumber = 1
       try {
         nextChapterNumber = await readAuthoritativeNextChapter(projectSession, locale)
-      } catch (error) {
-        if (!isCurrentRequest()) return
-        setAuthorityError(error instanceof Error ? error.message : String(error))
-        return
-      } finally {
+      } catch { /* 使用默认章节号 */ } finally {
         if (isCurrentRequest()) setAuthorityLoading(false)
       }
       if (!isCurrentRequest()) return
-      setAuthorityError(null)
       if (prefill) {
         // 使用章节蓝图预填数据
         setChapterNumber(Number(prefill.chapterNumber) || 1)
@@ -293,20 +289,19 @@ function ChapterCreationDialogSession({ isOpen, onClose, prefill }: Props) {
     const projectPath = projectSession.projectPath
 
     const targetChapter = Number(chapterNumber) || 1
-    let authoritativeNextChapter: number
-    try {
-      authoritativeNextChapter = await readAuthoritativeNextChapter(projectSession, locale)
-    } catch (error) {
-      if (!isProjectSessionCurrent(projectSession)) return
-      setAuthorityError(error instanceof Error ? error.message : String(error))
-      return
-    }
+    // 自由写作：不再要求目标章是权威下一章；只拦截"该章已有定稿"——
+    // 定稿是只读事实，需要先解锁为草稿才能重新写作。
+    const finalizedMeta = await ipc.invokeWithProjectSession(
+      projectSession,
+      'db:draft-get-finalized',
+      targetChapter,
+      projectPath,
+    )
     if (!isProjectSessionCurrent(projectSession)) return
-    setAuthorityError(null)
-    if (targetChapter !== authoritativeNextChapter) {
+    if (finalizedMeta) {
       setGuardError(text(
-        `当前权威定稿之后只能创作第 ${authoritativeNextChapter} 章。请从该章蓝图进入，或修复定稿章节后重试。`,
-        `Only Chapter ${authoritativeNextChapter} can be written after the current finalized authority. Open that blueprint, or repair finalized chapters before retrying.`,
+        `第 ${targetChapter} 章已定稿，正文为只读事实。请先在草稿箱或正文章节中将其解锁为草稿，再重新写作。`,
+        `Chapter ${targetChapter} is finalized and read-only. Unlock it back to draft in Drafts or Manuscript chapters before writing again.`,
       ))
       return
     }
@@ -579,7 +574,7 @@ function ChapterCreationDialogSession({ isOpen, onClose, prefill }: Props) {
               </span>
               <div className="flex items-center gap-2">
                 <Button variant="outline" onClick={onClose}>{text('取消', 'Cancel')}</Button>
-                <Button variant="ai" size="lg" onClick={() => void handleStart(false)} disabled={authorityLoading || !!authorityError || !!modelSelectionError}>
+                <Button variant="ai" size="lg" onClick={() => void handleStart(false)} disabled={authorityLoading || !!modelSelectionError}>
                   <span className="flex items-center gap-2">
                     <Play size={13} />
                     {text('开始创作', 'Start writing')}
@@ -588,10 +583,10 @@ function ChapterCreationDialogSession({ isOpen, onClose, prefill }: Props) {
               </div>
             </DialogFooter>
             {/* 前置校验失败提示（呈现在 Footer 下方） */}
-            {(authorityError ?? guardError) && (
+            {guardError && (
               <div className="mx-5 mb-4 flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs bg-yellow-500/10 border border-yellow-500/30 text-[var(--color-warning-text)]">
                 <AlertCircle size={13} className="flex-shrink-0 mt-0.5 text-[var(--color-warning)]" />
-                <span className="whitespace-pre-line">{authorityError ?? guardError}</span>
+                <span className="whitespace-pre-line">{guardError}</span>
               </div>
             )}
       </DialogContent>

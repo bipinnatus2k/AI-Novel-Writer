@@ -109,3 +109,32 @@ export function reconcileFinalizationCompletion(
     finalizationConflict: undefined,
   }
 }
+
+export interface FinalizationUnlockNotice {
+  draftId: number
+  projectPath: string
+  projectSession: ProjectSessionContext
+}
+
+/**
+ * 解锁结算 seam：同一项目会话、同一草稿的 tab 回到可编辑草稿状态，并清除
+ * 定稿收据与冲突标记。正文不动——解锁不改变正文，只解除只读。
+ */
+export function reconcileFinalizationUnlock(
+  tab: EditorTab,
+  unlock: FinalizationUnlockNotice,
+): EditorTab {
+  const sameTarget = (
+    tab.draftId === unlock.draftId
+    && tab.projectSessionLease === unlock.projectSession.leaseId
+    && sameProjectPathKey(tab.projectKey ?? '', unlock.projectPath)
+  )
+  if (!sameTarget) return tab
+  return {
+    ...tab,
+    draftStatus: 'draft',
+    finalizationId: undefined,
+    finalizationPublication: undefined,
+    finalizationConflict: undefined,
+  }
+}

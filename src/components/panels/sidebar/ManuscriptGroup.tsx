@@ -3,7 +3,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AlertTriangle, ChevronRight, ChevronDown, FileText, FolderOpen, Copy, PenTool, RotateCcw, Trash2 } from 'lucide-react'
+import { AlertTriangle, ChevronRight, ChevronDown, FileText, FolderOpen, Copy, LockOpen, PenTool, RotateCcw, Trash2 } from 'lucide-react'
 import type { FileNode, ProjectSessionContext } from '../../../shared/ipc-channels'
 import type { ChapterDeletionOperation } from '../../../shared/chapter-deletion'
 import { ipc } from '../../../services/ipc-client'
@@ -24,6 +24,7 @@ import {
   confirmLegacyKnowledgeAbsentAndContinue,
   deleteFinalizedChapter,
 } from './finalized-chapter-deletion'
+import { unlockFinalizedChapter } from './finalized-chapter-unlock'
 
 type ManuscriptFileNode = FileNode & { chapterTitle?: string }
 
@@ -233,6 +234,25 @@ export default function ManuscriptGroup({ files, projectPath }: { files: Manuscr
     })
   }
 
+  const unlockManuscriptChapter = async (
+    filePath: string,
+    displayName: string,
+    chapterNumber: number | undefined,
+  ) => {
+    const match = filePath.match(/^vela:\/\/manuscript\/(\d+)$/)
+    if (!match || chapterNumber === undefined) {
+      toast.error(text('当前章节路径不支持解锁', 'This chapter path cannot be unlocked.'))
+      return
+    }
+    await unlockFinalizedChapter({
+      project: currentProject,
+      projectPath,
+      draftId: Number(match[1]),
+      chapterNumber,
+      displayName,
+    })
+  }
+
   const retryDeletion = async (operation: ChapterDeletionOperation) => {
     const projectSession = captureProjectSession(currentProject)
     if (!projectSession || !isProjectSessionPath(projectSession, projectPath)) return
@@ -365,6 +385,12 @@ export default function ManuscriptGroup({ files, projectPath }: { files: Manuscr
                       onClick: () => navigator.clipboard.writeText(f.path).catch(() => { }),
                     },
                     { key: 'div2', type: 'divider' as const },
+                    {
+                      key: 'unlock',
+                      label: text('解锁为草稿', 'Unlock to draft'),
+                      icon: <LockOpen size={13} />,
+                      onClick: () => void unlockManuscriptChapter(f.path, displayName, chapterNumber),
+                    },
                     {
                       key: 'delete',
                       label: text('删除正文', 'Delete manuscript'),

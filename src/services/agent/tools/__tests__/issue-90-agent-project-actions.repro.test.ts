@@ -114,27 +114,6 @@ describe('Issue #90 AI assistant project actions', () => {
       prepare: () => stubWorkflowIpc({ 'db:character-get-all': [] }),
       expected: '角色卡',
     },
-    {
-      label: 'previous chapter finalization',
-      intent: { workflow: 'generate_draft', chapterNumber: 2 } as const,
-      prepare: () => stubWorkflowIpc({ 'db:draft-get-finalized': null }),
-      expected: '第 1 章尚未定稿',
-    },
-    {
-      label: 'previous chapter post-processing',
-      intent: { workflow: 'generate_draft', chapterNumber: 2 } as const,
-      prepare: () => stubWorkflowIpc({
-        'db:draft-get-finalized': { id: 1 },
-        'db:post-process-get-latest-run': {
-          id: 'post-1', sourceLabel: '第1章定稿', createdAt: '', updatedAt: '', allCriticalPassed: false,
-        },
-        'db:post-process-get-steps': [{
-          id: 1, runId: 'post-1', stepKey: 'chapter_notes', label: '章节要点', critical: true,
-          ok: false, errorMsg: 'failed', attemptCount: 1, completedAt: '', lastAttemptAt: '',
-        }],
-      }),
-      expected: '定稿后处理未完成',
-    },
   ])('rejects failed canonical $label guard before registering a run', async ({ intent, prepare, expected }) => {
     prepare()
     const projectSession = createAgentExecutionContext().projectSession
@@ -143,6 +122,26 @@ describe('Issue #90 AI assistant project actions', () => {
     await expect(launchCreativeWorkflow(intent, projectSession)).rejects.toThrow(expected)
     expect(useWorkflowStore.getState().activeRuns).toEqual([])
     expect(useWorkflowStore.getState().history).toEqual([])
+  })
+
+  it('allows free writing from a blueprint when the previous chapter is not finalized', async () => {
+    // 章节写作已放开"前一章必须定稿"的门禁；前章未定稿时按蓝图自由生成
+    stubWorkflowIpc({ 'db:draft-get-finalized': null })
+    const projectSession = createAgentExecutionContext().projectSession
+    if (!projectSession) throw new Error('test project session missing')
+
+    const receipt = await launchCreativeWorkflow({
+      workflow: 'generate_draft',
+      chapterNumber: 2,
+    }, projectSession)
+
+    expect(receipt).toMatchObject({
+      accepted: true,
+      workflow: 'generate_draft',
+      projectPath,
+      runId: expect.any(String),
+      status: 'running',
+    })
   })
 
   it('returns no workflow artifact when a canonical guard rejects the Agent action', async () => {

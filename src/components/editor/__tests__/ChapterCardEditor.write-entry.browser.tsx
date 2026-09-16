@@ -83,6 +83,24 @@ function installIpc(options: {
       const chapterNumber = args[0] as number
       return options.finalizedChapter?.(chapterNumber) ?? null
     }
+    if (channel === 'db:draft-list-all') {
+      const blueprints = options.blueprints ?? [blueprint(1)]
+      return blueprints.flatMap((blueprintItem) => {
+        const finalized = options.finalizedChapter?.(blueprintItem.chapterNumber)
+        if (!finalized) return []
+        return [{
+          id: Number((finalized as { id: number }).id),
+          chapterNumber: blueprintItem.chapterNumber,
+          version: 1,
+          status: 'finalized',
+          source: 'write',
+          contentId: 1,
+          wordCount: 1,
+          createdAt: '',
+          updatedAt: '',
+        }]
+      })
+    }
     if (channel === 'db:project-clear-generated-data') {
       options.onClearGeneratedText?.()
       return { success: true, cleared: ['generatedText'] }

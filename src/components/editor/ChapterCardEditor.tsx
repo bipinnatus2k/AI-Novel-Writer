@@ -126,6 +126,8 @@ export default function ChapterCardEditor({
   // 下一个可写的章节号
   const [nextWriteChapter, setNextWriteChapter] = useState<number | null>(null)
   const [authorityError, setAuthorityError] = useState<string | null>(null)
+  // 已定稿章节号集合：写作入口按"有蓝图且未定稿"判断，不再限于权威下一章
+  const [finalizedChapters, setFinalizedChapters] = useState<Set<number>>(() => new Set())
   // 旧版仿写导入可能造成“前章未写、后续正文已定稿”的异常状态；该状态只能由用户确认恢复。
   const [legacyImportedTextRecoveryChapter, setLegacyImportedTextRecoveryChapter] = useState<number | null>(null)
 
@@ -229,6 +231,7 @@ export default function ChapterCardEditor({
       setDataProjectSession(null)
       setNextWriteChapter(null)
       setAuthorityError(null)
+      setFinalizedChapters(new Set())
       setLegacyImportedTextRecoveryChapter(null)
       setSaving(false)
       applyVisibleDraftState([], new Set())
@@ -247,6 +250,7 @@ export default function ChapterCardEditor({
       setDataProjectSession(null)
       setNextWriteChapter(null)
       setAuthorityError(null)
+      setFinalizedChapters(new Set())
       setLegacyImportedTextRecoveryChapter(null)
       setSaving(false)
       applyVisibleDraftState([], new Set())
@@ -276,6 +280,19 @@ export default function ChapterCardEditor({
       if (!restored || !isLatestProjectRequest()) return
       const data = restored.blueprints
       if (data.length > 0) setSelectedIdx(0)
+      try {
+        const drafts = await ipc.invokeWithProjectSession(projectSession, 'db:draft-list-all', projectKey)
+        if (!isLatestProjectRequest()) return
+        setFinalizedChapters(new Set(
+          drafts
+            .filter(draft => draft.status === 'finalized')
+            .map(draft => draft.chapterNumber),
+        ))
+      } catch {
+        if (!isLatestProjectRequest()) return
+        // 定稿信息读取失败时按"全部未定稿"处理，写作入口由主进程最终校验
+        setFinalizedChapters(new Set())
+      }
       try {
         const nextChapter = await readAuthoritativeNextChapter(projectSession, locale)
         if (!isLatestProjectRequest()) return
@@ -337,9 +354,20 @@ export default function ChapterCardEditor({
     })
   }, [loadBlueprints, projectKey])
 
-  // 单章或批量定稿后，重新读取连续定稿状态，避免旧版异常记录造成跳章入口。
+  // 单章或批量定稿/解锁后，重新读取连续定稿状态，避免旧版异常记录造成跳章入口。
   useEffect(() => {
     return globalEventBus.on('FINALIZE_COMPLETE', ({ projectPath, projectSession }) => {
+      if (
+        !sameProjectPathKey(projectPath, projectKey)
+        || !sameProjectSessionContext(projectSession, currentProjectSessionForPath(projectKey))
+      ) return
+      loadBlueprints()
+    })
+  }, [projectKey, loadBlueprints])
+
+  // 解锁定稿后刷新：章节回到草稿态，写作入口与权威下一章都需要重算
+  useEffect(() => {
+    return globalEventBus.on('FINALIZE_UNLOCKED', ({ projectPath, projectSession }) => {
       if (
         !sameProjectPathKey(projectPath, projectKey)
         || !sameProjectSessionContext(projectSession, currentProjectSessionForPath(projectKey))
@@ -895,6 +923,15 @@ export default function ChapterCardEditor({
                   )}>
                     {roleLabel(bp.role)}
                   </span>
+                  {finalizedChapters.has(bp.chapterNumber) && (
+                    <span
+                      className="text-[0.7rem] px-1 py-0.5 rounded"
+                      style={{ backgroundColor: 'rgba(34,197,94,0.15)', color: 'rgb(34,197,94)' }}
+                      title={text('本章已定稿；解锁为草稿后才能重新写作', 'This chapter is finalized; unlock it to draft before writing again')}
+                    >
+                      {text('已定稿', 'Finalized')}
+                    </span>
+                  )}
                   {bp.userGuidance && (
                     <span
                       className="text-[0.7rem] px-1 py-0.5 rounded"
@@ -933,8 +970,8 @@ export default function ChapterCardEditor({
                   )}
                 </h3>
                 <div className="flex items-center gap-1.5">
-                  {/* 仅下一章允许写作 */}
-                  {nextWritableBlueprint && selected.chapterNumber === nextWritableBlueprint.chapterNumber && (
+                  {/* 有蓝图且未定稿的章节均可按蓝图写作（已定稿章需先解锁为草稿） */}
+                  {projectDataReady && !finalizedChapters.has(selected.chapterNumber) && (
                     <Button
                       variant="ai"
                       size="sm"
