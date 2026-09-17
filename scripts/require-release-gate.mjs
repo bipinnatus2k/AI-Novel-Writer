@@ -4,7 +4,7 @@ const expectedContext = 'release-win-verify'
 
 if (process.env.AI_NOVEL_RELEASE_GATE !== expectedContext) {
   console.error(
-    'Direct Windows artifact builds are blocked. Run "pnpm run build:win" so the complete release verification gate executes.',
+    'Direct Windows artifact builds are blocked. Run "npm run build:win" so the complete release verification gate executes.',
   )
   process.exit(1)
 }

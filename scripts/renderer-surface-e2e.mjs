@@ -225,18 +225,18 @@ function createIsolatedFixture() {
 }
 
 function runProjectScript(scriptName) {
-  const pnpmCli = process.env.npm_execpath
-  const command = pnpmCli ? (process.env.npm_node_execpath || process.execPath) : 'pnpm'
-  const args = pnpmCli ? [pnpmCli, 'run', scriptName] : ['run', scriptName]
+  const npmCli = process.env.npm_execpath
+  const command = npmCli ? (process.env.npm_node_execpath || process.execPath) : 'npm'
+  const args = npmCli ? [npmCli, 'run', scriptName] : ['run', scriptName]
   const result = spawnSync(command, args, {
     cwd: repositoryRoot,
     env: process.env,
     stdio: 'inherit',
     windowsHide: true,
-    shell: !pnpmCli && process.platform === 'win32',
+    shell: !npmCli && process.platform === 'win32',
   })
   if (result.error) throw result.error
-  assert.equal(result.status, 0, `Project script failed: pnpm run ${scriptName}`)
+  assert.equal(result.status, 0, `Project script failed: npm run ${scriptName}`)
 }
 
 export function prepareVisualEvidenceDirectory(configuredOverride) {
@@ -883,7 +883,7 @@ async function assertClassicPaperUsesSemanticSurfaces(page) {
 }
 
 async function runRendererSurfaceE2e() {
-  assert.ok(existsSync(join(repositoryRoot, 'dist', 'index.html')), 'Run `pnpm run build` before the renderer surface E2E')
+  assert.ok(existsSync(join(repositoryRoot, 'dist', 'index.html')), 'Run `npm run build` before the renderer surface E2E')
   assert.ok(existsSync(join(repositoryRoot, 'dist-electron', 'main.js')), 'Electron build output is missing')
 
   const visualEvidenceDirectory = prepareVisualEvidenceDirectory()

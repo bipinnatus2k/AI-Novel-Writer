@@ -30,7 +30,7 @@ function Get-Sha256Hash {
 Push-Location $root
 try {
   if (-not $SkipBuild) {
-    pnpm run build:win-dir
+    npm run build:win-dir
     if ($LASTEXITCODE -ne 0) {
       throw "Windows directory build failed with exit code $LASTEXITCODE"
     }

@@ -3,14 +3,14 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 
 /**
- * Canonicalize only line endings in a pnpm lockfile before hashing it.
+ * Canonicalize only line endings in the npm lockfile before hashing it.
  *
  * The Windows qualification job and Linux promotion job may check out the
  * same Git blob with different working-tree line endings. This routine keeps
  * every non-line-ending byte intact, so it does not hide a dependency or
  * lockfile-content change.
  */
-export function canonicalizePnpmLockfileBytes(bytes) {
+export function canonicalizePackageLockBytes(bytes) {
   const normalized = Buffer.allocUnsafe(bytes.length)
   let writeOffset = 0
 
@@ -30,8 +30,8 @@ export function canonicalizePnpmLockfileBytes(bytes) {
   return normalized.subarray(0, writeOffset)
 }
 
-export function canonicalPnpmLockfileSha256(file) {
+export function canonicalPackageLockSha256(file) {
   return createHash('sha256')
-    .update(canonicalizePnpmLockfileBytes(readFileSync(file)))
+    .update(canonicalizePackageLockBytes(readFileSync(file)))
     .digest('hex')
 }

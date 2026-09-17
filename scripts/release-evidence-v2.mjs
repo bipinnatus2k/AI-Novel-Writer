@@ -13,7 +13,7 @@ import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { TextDecoder } from 'node:util'
-import { canonicalPnpmLockfileSha256 } from './canonical-pnpm-lockfile-hash.mjs'
+import { canonicalPackageLockSha256 } from './canonical-package-lock-hash.mjs'
 
 const scriptPath = fileURLToPath(import.meta.url)
 const repositoryRoot = path.resolve(path.dirname(scriptPath), '..')
@@ -225,9 +225,9 @@ function readPackageMetadata(root = repositoryRoot) {
   const metadata = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
   assert(typeof metadata?.version === 'string', 'package.json must declare a version')
   assert(typeof metadata?.packageManager === 'string', 'package.json must declare packageManager')
-  const packageManager = /^pnpm@(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/.exec(metadata.packageManager)
-  assert(packageManager, 'package.json packageManager must pin pnpm')
-  return { version: safeVersion(metadata.version), pnpmVersion: packageManager[1] }
+  const packageManager = /^npm@(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/.exec(metadata.packageManager)
+  assert(packageManager, 'package.json packageManager must pin npm')
+  return { version: safeVersion(metadata.version), npmVersion: packageManager[1] }
 }
 
 function now() {
@@ -245,19 +245,19 @@ function pinnedVersion(value, label) {
   return value
 }
 
-function installedPnpmVersion(cwd) {
+function installedNpmVersion(cwd) {
   const isWindows = process.platform === 'win32'
-  const executable = isWindows ? (process.env.ComSpec ?? 'cmd.exe') : 'pnpm'
-  const argumentsList = isWindows ? ['/d', '/s', '/c', 'pnpm --version'] : ['--version']
+  const executable = isWindows ? (process.env.ComSpec ?? 'cmd.exe') : 'npm'
+  const argumentsList = isWindows ? ['/d', '/s', '/c', 'npm --version'] : ['--version']
   const result = spawnSync(executable, argumentsList, {
     cwd,
     encoding: 'utf8',
     shell: false,
     windowsHide: true,
   })
-  assert(!result.error && result.status === 0, `Unable to read installed pnpm version: ${result.error?.message ?? `exit ${result.status}`}`)
+  assert(!result.error && result.status === 0, `Unable to read installed npm version: ${result.error?.message ?? `exit ${result.status}`}`)
   const version = String(result.stdout ?? '').trim()
-  return pinnedVersion(version, 'Installed pnpm version')
+  return pinnedVersion(version, 'Installed npm version')
 }
 
 function parseDispatchInputsJson(value) {
@@ -306,7 +306,7 @@ export function initializeReleaseEvidence({
   dispatchInputs,
   root = repositoryRoot,
   expectedNodeVersion,
-  expectedPnpmVersion,
+  expectedNpmVersion,
 }) {
   const selectedPlatform = validatePlatform(platform)
   const resolvedEvidenceRoot = path.resolve(evidenceRoot)
@@ -329,19 +329,19 @@ export function initializeReleaseEvidence({
 
   const packageMetadata = readPackageMetadata(root)
   const resolvedExpectedNodeVersion = pinnedVersion(expectedNodeVersion, 'Expected Node version')
-  const resolvedExpectedPnpmVersion = pinnedVersion(expectedPnpmVersion, 'Expected pnpm version')
+  const resolvedExpectedNpmVersion = pinnedVersion(expectedNpmVersion, 'Expected npm version')
   const actualNodeVersion = pinnedVersion(process.versions.node, 'Installed Node version')
-  const actualPnpmVersion = installedPnpmVersion(root)
-  assert(resolvedExpectedPnpmVersion === packageMetadata.pnpmVersion, 'Expected pnpm version must match package.json')
+  const actualNpmVersion = installedNpmVersion(root)
+  assert(resolvedExpectedNpmVersion === packageMetadata.npmVersion, 'Expected npm version must match package.json')
   assert(actualNodeVersion === resolvedExpectedNodeVersion, `Installed Node version ${actualNodeVersion} does not match expected ${resolvedExpectedNodeVersion}`)
-  assert(actualPnpmVersion === resolvedExpectedPnpmVersion, `Installed pnpm version ${actualPnpmVersion} does not match expected ${resolvedExpectedPnpmVersion}`)
+  assert(actualNpmVersion === resolvedExpectedNpmVersion, `Installed npm version ${actualNpmVersion} does not match expected ${resolvedExpectedNpmVersion}`)
 
   const contractPath = path.join(resolvedEvidenceRoot, 'release-contract.json')
   const ledgerPath = path.join(resolvedEvidenceRoot, 'run-ledger.json')
   assert(!existsSync(contractPath) && !existsSync(ledgerPath), 'Release evidence has already been initialized')
   mkdirSync(resolvedEvidenceRoot, { recursive: true })
 
-  const lockfile = path.join(root, 'pnpm-lock.yaml')
+  const lockfile = path.join(root, 'package-lock.json')
   const contract = {
     schemaVersion: 2,
     stage: 'qualification',
@@ -364,20 +364,20 @@ export function initializeReleaseEvidence({
       appToolchain: {
         expectedNodeVersion: resolvedExpectedNodeVersion,
         actualNodeVersion,
-        packageManagerCommand: 'pnpm',
-        expectedPackageManagerVersion: resolvedExpectedPnpmVersion,
-        actualPackageManagerVersion: actualPnpmVersion,
+        packageManagerCommand: 'npm',
+        expectedPackageManagerVersion: resolvedExpectedNpmVersion,
+        actualPackageManagerVersion: actualNpmVersion,
         source: {
           expectedNodeVersion: 'qualification workflow init --expected-node-version',
-          expectedPackageManagerVersion: 'qualification workflow init --expected-pnpm-version and package.json packageManager',
+          expectedPackageManagerVersion: 'qualification workflow init --expected-npm-version and package.json packageManager',
           actualNodeVersion: 'Node process.versions.node',
-          actualPackageManagerVersion: 'pnpm --version',
+          actualPackageManagerVersion: 'npm --version',
         },
       },
       lockfile: {
-        path: 'pnpm-lock.yaml',
+        path: 'package-lock.json',
         rawByteSha256: sha256File(lockfile),
-        textNewlinesLfSha256: canonicalPnpmLockfileSha256(lockfile),
+        textNewlinesLfSha256: canonicalPackageLockSha256(lockfile),
       },
       artifactSet: platformArtifactSet(selectedPlatform, packageMetadata.version),
       acceptance: {
@@ -854,7 +854,7 @@ export function finalizeReleaseEvidence({ platform, evidenceRoot, releaseRoot })
     lockfileSha256: contract.frozen.lockfile.textNewlinesLfSha256,
     lockfile: contract.frozen.lockfile,
     nodeVersion: contract.frozen.appToolchain.actualNodeVersion,
-    pnpmVersion: contract.frozen.appToolchain.actualPackageManagerVersion,
+    npmVersion: contract.frozen.appToolchain.actualPackageManagerVersion,
     runnerImage: {
       os: contract.frozen.runner.actualImageOS,
       version: contract.frozen.runner.actualImageVersion,
@@ -967,10 +967,10 @@ function validateFrozenContract(contract, { platform, expectedCommit, expectedLo
   assert(contract.frozen?.runner?.expectedLabel && contract.frozen?.runner?.actualImageOS && contract.frozen?.runner?.actualImageVersion, 'Release evidence contract runner evidence is incomplete')
   assert(contract.frozen?.appToolchain?.expectedNodeVersion && contract.frozen?.appToolchain?.actualNodeVersion && contract.frozen?.appToolchain?.expectedPackageManagerVersion && contract.frozen?.appToolchain?.actualPackageManagerVersion, 'Release evidence contract toolchain evidence is incomplete')
   assert(contract.frozen.appToolchain.expectedNodeVersion === contract.frozen.appToolchain.actualNodeVersion, 'Release evidence contract Node version was not qualified against its frozen expectation')
-  assert(contract.frozen.appToolchain.expectedPackageManagerVersion === contract.frozen.appToolchain.actualPackageManagerVersion, 'Release evidence contract pnpm version was not qualified against its frozen expectation')
+  assert(contract.frozen.appToolchain.expectedPackageManagerVersion === contract.frozen.appToolchain.actualPackageManagerVersion, 'Release evidence contract npm version was not qualified against its frozen expectation')
   assert(contract.frozen.appToolchain.source?.expectedNodeVersion === 'qualification workflow init --expected-node-version', 'Release evidence contract Node expectation source is invalid')
-  assert(contract.frozen.appToolchain.source?.expectedPackageManagerVersion === 'qualification workflow init --expected-pnpm-version and package.json packageManager', 'Release evidence contract pnpm expectation source is invalid')
-  assert(contract.frozen.appToolchain.source?.actualNodeVersion === 'Node process.versions.node' && contract.frozen.appToolchain.source?.actualPackageManagerVersion === 'pnpm --version', 'Release evidence contract actual toolchain source is invalid')
+  assert(contract.frozen.appToolchain.source?.expectedPackageManagerVersion === 'qualification workflow init --expected-npm-version and package.json packageManager', 'Release evidence contract npm expectation source is invalid')
+  assert(contract.frozen.appToolchain.source?.actualNodeVersion === 'Node process.versions.node' && contract.frozen.appToolchain.source?.actualPackageManagerVersion === 'npm --version', 'Release evidence contract actual toolchain source is invalid')
   exactFileSet(contract.frozen?.acceptance?.evidenceFiles ?? [], ACCEPTANCE_PROFILES[platform], 'Release evidence contract acceptance')
   assert(contract.frozen?.signingEvidence?.path === 'qualification/acceptance/signing.json', 'Release evidence contract signing path is invalid')
   if (expectedRepository !== undefined) assert(contract.repository === expectedRepository, 'Release evidence contract repository does not match the promotion plan')
@@ -1127,7 +1127,7 @@ function main() {
       imageOS: requiredOption(options, 'image-os'),
       imageVersion: requiredOption(options, 'image-version'),
       expectedNodeVersion: requiredOption(options, 'expected-node-version'),
-      expectedPnpmVersion: requiredOption(options, 'expected-pnpm-version'),
+      expectedNpmVersion: requiredOption(options, 'expected-npm-version'),
       workflowPath: requiredOption(options, 'workflow-path'),
       workflowName: requiredOption(options, 'workflow-name'),
       actor: requiredOption(options, 'actor'),

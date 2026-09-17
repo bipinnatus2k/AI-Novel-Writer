@@ -14,20 +14,20 @@ const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as {
 
 describe('release dependency contract', () => {
   it('uses one pinned package manager and exposes the matching LanceDB native binding for every shipped desktop architecture', () => {
-    expect(pkg.packageManager).toBe('pnpm@11.11.0')
+    expect(pkg.packageManager).toBe('npm@11.19.0')
     expect(pkg.dependencies?.['@lancedb/lancedb']).toBe('0.22.3')
     expect(pkg.optionalDependencies).toMatchObject({
       '@lancedb/lancedb-darwin-arm64': '0.22.3',
       '@lancedb/lancedb-darwin-x64': '0.22.3',
       '@lancedb/lancedb-win32-x64-msvc': '0.22.3',
     })
-    expect(existsSync('package-lock.json')).toBe(false)
+    expect(existsSync('package-lock.json')).toBe(true)
   })
 
   it('runs clean, native verification, and executable smoke gates for Windows builds', () => {
-    expect(pkg.scripts?.['build:win-dir']).toContain('pnpm run clean:build')
-    expect(pkg.scripts?.['build:win-dir']).toContain('pnpm run rebuild:electron')
-    expect(pkg.scripts?.['build:win-dir']).toContain('pnpm run verify:win-package')
+    expect(pkg.scripts?.['build:win-dir']).toContain('npm run clean:build')
+    expect(pkg.scripts?.['build:win-dir']).toContain('npm run rebuild:electron')
+    expect(pkg.scripts?.['build:win-dir']).toContain('npm run verify:win-package')
     expect(pkg.scripts?.['verify:win-package']).toBe('node scripts/verify-win-package.mjs')
     expect(pkg.scripts?.['smoke:win-app']).toContain('scripts/smoke-win-app.ps1')
 
@@ -62,10 +62,10 @@ describe('release dependency contract', () => {
 
   it('makes the formal Windows updater build self-verifying and keeps portable ZIPs out of the release workflow', () => {
     expect(pkg.scripts?.build).not.toContain('electron-builder')
-    expect(pkg.scripts?.['build:win']).toBe('pnpm run release:win:verify')
+    expect(pkg.scripts?.['build:win']).toBe('npm run release:win:verify')
     expect(pkg.scripts?.['release:win:verify']).toBe('node scripts/release-win-verify.mjs')
     expect(pkg.scripts?.['build:win:artifacts']).toMatch(/^node scripts\/require-release-gate\.mjs && /)
-    expect(pkg.scripts?.['build:win:artifacts']).toContain('pnpm run rebuild:electron')
+    expect(pkg.scripts?.['build:win:artifacts']).toContain('npm run rebuild:electron')
     expect(pkg.scripts?.['build:win:artifacts']).toContain('electron-builder --win --x64')
     expect(pkg.scripts?.['build:win:artifacts']).toContain('--publish never')
 
@@ -183,7 +183,7 @@ describe('release dependency contract', () => {
     expect(canUseMonitorBody).toContain('monitor.exitCode === null')
     expect(canUseMonitorBody).toContain('monitor.signalCode === null')
     expect(releaseGate.slice(preMonitorLoop, preMonitorInvocation)).toContain(
-      "await runNodeProcess([pnpmCli, 'run', step])",
+      "await runNodeProcess([npmCli, 'run', step])",
     )
     expect(releaseGate).toContain('let releaseFinalizationRequired = false')
     expect(releaseGate).not.toContain('preMonitorSucceeded')

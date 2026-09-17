@@ -36,12 +36,6 @@ jobs:
         with:
           persist-credentials: false
 
-      # Keep the toolchain aligned with the existing Windows release workflow.
-      - name: Set up pnpm
-        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda
-        with:
-          version: 11.11.0
-
       - name: Set up Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
@@ -51,32 +45,32 @@ jobs:
         run: git rev-parse HEAD
 
       - name: Install locked dependencies
-        run: pnpm install --frozen-lockfile
+        run: npm ci
 
       - name: Type-check
-        run: pnpm run typecheck
+        run: npm run typecheck
 
       - name: Lint
-        run: pnpm run lint
+        run: npm run lint
 
       - name: Check translation coverage
-        run: pnpm run check:i18n
+        run: npm run check:i18n
 
       - name: Prepare and verify Node native modules
-        run: pnpm run prepare:native-node
+        run: npm run prepare:native-node
 
       - name: Run complete desktop unit test suite
-        run: pnpm test
+        run: npm test
 
       - name: Install Playwright Chromium
-        run: pnpm exec playwright install chromium
+        run: npx playwright install chromium
 
       - name: Run renderer browser tests
-        run: pnpm run test:browser
+        run: npm run test:browser
 
       # Compile only: do not rebuild for Electron, package installers, or publish.
       - name: Compile renderer and Electron sources
-        run: pnpm run build
+        run: npm run build
 
       # Intentionally no artifact uploads or dependency cache: keep this daily
       # gate separate from retained, release-qualified Windows/macOS packages.

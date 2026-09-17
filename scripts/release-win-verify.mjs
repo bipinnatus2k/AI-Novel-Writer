@@ -52,9 +52,9 @@ if (process.platform !== 'win32') {
   process.exit(1)
 }
 
-const pnpmCli = process.env.npm_execpath
-if (!pnpmCli) {
-  console.error('Run the Windows release verification gate through pnpm: pnpm run build:win')
+const npmCli = process.env.npm_execpath
+if (!npmCli) {
+  console.error('Run the Windows release verification gate through npm: npm run build:win')
   process.exit(1)
 }
 
@@ -545,7 +545,7 @@ async function waitForFinalQuietPeriod() {
 
 async function runPreMonitorSteps() {
   for (const step of releasePreMonitorSteps) {
-    await runNodeProcess([pnpmCli, 'run', step])
+    await runNodeProcess([npmCli, 'run', step])
   }
 }
 
@@ -625,14 +625,14 @@ async function main() {
   await waitForMonitorState(['ready'], 10_000)
 
   for (const step of releaseVerificationSteps) {
-    const launch = spawnArmedNodeProcess(step, [pnpmCli, 'run', step])
+    const launch = spawnArmedNodeProcess(step, [npmCli, 'run', step])
     const child = launch.child
     let result
     try {
       await waitForArmedNodeProcess(step, launch)
       await registerMonitoredChild(step, child, [
           'node',
-          'pnpm',
+          'npm',
           'electron',
           'electron-builder',
           'AI小说作家.exe',

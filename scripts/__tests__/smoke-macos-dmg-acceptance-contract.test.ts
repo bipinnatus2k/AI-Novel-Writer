@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { canonicalPnpmLockfileSha256 } from '../canonical-pnpm-lockfile-hash.mjs'
+import { canonicalPackageLockSha256 } from '../canonical-package-lock-hash.mjs'
 import {
   classifyMacosCodeSigning,
   COMMAND_PROFILES,
@@ -181,7 +181,7 @@ describe('macOS DMG acceptance receipt contract', () => {
       '--image-os', 'macos-15-intel',
       '--image-version', '20260726.1',
       '--expected-node-version', process.versions.node,
-      '--expected-pnpm-version', '11.11.0',
+      '--expected-npm-version', '11.19.0',
       '--workflow-path', '.github/workflows/macos-x64-cloud-build.yml',
       '--workflow-name', 'macOS Intel x64 cloud package qualification',
       '--actor', 'release-operator',
@@ -263,7 +263,7 @@ describe('macOS DMG acceptance receipt contract', () => {
       '--image-os', imageOs,
       '--image-version', '20260726.1',
       '--expected-node-version', process.versions.node,
-      '--expected-pnpm-version', '11.11.0',
+      '--expected-npm-version', '11.19.0',
       '--workflow-path', workflowPath,
       '--workflow-name', workflowName,
       '--actor', 'release-operator',
@@ -444,7 +444,7 @@ describe('macOS DMG acceptance receipt contract', () => {
       '--platform', platform,
       '--bundle-root', releaseRoot,
       '--expected-commit', 'd'.repeat(40),
-      '--expected-lockfile-sha256', canonicalPnpmLockfileSha256(path.join(repositoryRoot, 'pnpm-lock.yaml')),
+      '--expected-lockfile-sha256', canonicalPackageLockSha256(path.join(repositoryRoot, 'package-lock.json')),
       '--run-attempt', '1',
       '--version', version,
     ], { cwd: repositoryRoot, encoding: 'utf8' })
@@ -462,7 +462,7 @@ describe('macOS DMG acceptance receipt contract', () => {
       '--platform', platform,
       '--bundle-root', releaseRoot,
       '--expected-commit', 'd'.repeat(40),
-      '--expected-lockfile-sha256', canonicalPnpmLockfileSha256(path.join(repositoryRoot, 'pnpm-lock.yaml')),
+      '--expected-lockfile-sha256', canonicalPackageLockSha256(path.join(repositoryRoot, 'package-lock.json')),
       '--run-attempt', '1',
       '--version', version,
     ], { cwd: repositoryRoot, encoding: 'utf8' })
@@ -506,7 +506,7 @@ describe('macOS DMG acceptance receipt contract', () => {
       '--platform', platform,
       '--bundle-root', releaseRoot,
       '--expected-commit', 'd'.repeat(40),
-      '--expected-lockfile-sha256', canonicalPnpmLockfileSha256(path.join(repositoryRoot, 'pnpm-lock.yaml')),
+      '--expected-lockfile-sha256', canonicalPackageLockSha256(path.join(repositoryRoot, 'package-lock.json')),
       '--run-attempt', '1',
       '--version', version,
     ], { cwd: repositoryRoot, encoding: 'utf8' })

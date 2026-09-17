@@ -68,7 +68,7 @@ describe('macOS ARM64 cloud build workflow contract', () => {
     expect(workflow).toContain('runs-on: macos-14')
     expect(workflow).toContain('timeout-minutes: 60')
     expect(workflow).toMatch(/node-version:\s*['"]?22\.23\.1['"]?/)
-    expect(workflow).toMatch(/version:\s*['"]?11\.11\.0['"]?/)
+    expect(workflow).toContain('npm install --global npm@11.19.0')
     const checkout = namedStep(workflow, 'Check out source')
     expect(checkout).toContain('ref: ${{ inputs.expected_sha }}')
     expect(checkout).toContain('persist-credentials: false')
@@ -84,7 +84,7 @@ describe('macOS ARM64 cloud build workflow contract', () => {
     expect(initializeEvidence).toContain('--image-os "$ImageOS"')
     expect(initializeEvidence).toContain('--image-version "$ImageVersion"')
     expect(initializeEvidence).toContain('--expected-node-version 22.23.1')
-    expect(initializeEvidence).toContain('--expected-pnpm-version 11.11.0')
+    expect(initializeEvidence).toContain('--expected-npm-version 11.19.0')
     expect(initializeEvidence).toContain("--workflow-path '.github/workflows/macos-arm64-cloud-build.yml'")
     expect(initializeEvidence).toContain("--workflow-name 'macOS ARM64 cloud package qualification'")
     expect(initializeEvidence).toContain('--actor "$GITHUB_ACTOR"')
@@ -94,13 +94,13 @@ describe('macOS ARM64 cloud build workflow contract', () => {
     expect(workflow.indexOf('Initialize macOS v2 acceptance evidence')).toBeLessThan(workflow.indexOf('Install locked dependencies'))
 
     const expectedRecordedSteps = [
-      ['Install locked dependencies', 'install-locked-dependencies', 'pnpm install --frozen-lockfile'],
-      ['Install Playwright Chromium', 'install-playwright-chromium', 'pnpm exec playwright install chromium'],
-      ['Run renderer browser tests', 'renderer-browser-tests', 'pnpm run test:browser'],
+      ['Install locked dependencies', 'install-locked-dependencies', 'npm ci'],
+      ['Install Playwright Chromium', 'install-playwright-chromium', 'npx playwright install chromium'],
+      ['Run renderer browser tests', 'renderer-browser-tests', 'npm run test:browser'],
       ['Build native secure helper for macOS tests', 'build-native-secure-helper', 'clang -fobjc-arc -framework Foundation'],
-      ['Run test suite', 'test-suite', 'pnpm test'],
-      ['Build unsigned macOS ARM64 package', 'build-macos-arm64-package', 'pnpm run build:mac:arm64:artifacts'],
-      ['Run mounted-DMG smoke', 'mounted-dmg-smoke', 'AI_NOVEL_RELEASE_TARGET_ARCH=arm64 pnpm run smoke:mac-dmg'],
+      ['Run test suite', 'test-suite', 'npm test'],
+      ['Build unsigned macOS ARM64 package', 'build-macos-arm64-package', 'npm run build:mac:arm64:artifacts'],
+      ['Run mounted-DMG smoke', 'mounted-dmg-smoke', 'AI_NOVEL_RELEASE_TARGET_ARCH=arm64 npm run smoke:mac-dmg'],
     ] as const
     for (const [name, step, command] of expectedRecordedSteps) {
       const recordedStep = namedStep(workflow, name)
@@ -114,8 +114,8 @@ describe('macOS ARM64 cloud build workflow contract', () => {
     expect(helperPreparation).toContain('clang -fobjc-arc -framework Foundation')
     expect(helperPreparation).toContain('electron/security/darwin-safe-file-system.m')
     expect(helperPreparation).toContain('chmod +x electron/security/darwin-safe-file-system')
-    expect(workflow).toContain('pnpm run build:mac:arm64:artifacts')
-    expect(workflow).toContain('pnpm run smoke:mac-dmg')
+    expect(workflow).toContain('npm run build:mac:arm64:artifacts')
+    expect(workflow).toContain('npm run smoke:mac-dmg')
     expect(workflow).not.toContain('node scripts/generate-macos-cloud-build-manifest.mjs')
     expect(workflow).not.toMatch(/\b(?:gh\s+release|create-release|upload-release|git\s+tag|git\s+push\s+.*(?:tag|refs\/tags)|codesign|notarytool)\b/i)
 
@@ -201,8 +201,8 @@ describe('macOS ARM64 cloud build workflow contract', () => {
     expect(nativeBinding).toContain("process.arch !== 'x64'")
     expect(workflow.indexOf('Verify Intel LanceDB native binding')).toBeGreaterThan(workflow.indexOf('Install locked dependencies'))
     expect(workflow.indexOf('Verify Intel LanceDB native binding')).toBeLessThan(workflow.indexOf('Run test suite'))
-    expect(workflow).toContain('pnpm run build:mac:x64:artifacts')
-    expect(workflow).toContain('AI_NOVEL_RELEASE_TARGET_ARCH=x64 pnpm run smoke:mac-dmg')
+    expect(workflow).toContain('npm run build:mac:x64:artifacts')
+    expect(workflow).toContain('AI_NOVEL_RELEASE_TARGET_ARCH=x64 npm run smoke:mac-dmg')
     expect(workflow).toContain("test \"$(uname -m)\" = 'x86_64'")
     expect(workflow).toContain('name: qualified-macos-x64')
     expect(workflow).toContain('path: ${{ runner.temp }}/macos-x64-qualified')

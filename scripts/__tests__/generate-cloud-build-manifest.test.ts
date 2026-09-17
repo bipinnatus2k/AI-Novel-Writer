@@ -5,7 +5,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { afterEach, describe, expect, it } from 'vitest'
-import { canonicalPnpmLockfileSha256 } from '../canonical-pnpm-lockfile-hash.mjs'
+import { canonicalPackageLockSha256 } from '../canonical-package-lock-hash.mjs'
 import { recordQualificationCommands, windowsAcceptanceReceipt } from './release-evidence-v2-fixtures'
 
 const testDirectory = path.dirname(fileURLToPath(import.meta.url))
@@ -102,7 +102,7 @@ describe('cloud Windows build manifest', () => {
       '--image-os', 'win22',
       '--image-version', '20260726.1',
       '--expected-node-version', process.versions.node,
-      '--expected-pnpm-version', '11.11.0',
+      '--expected-npm-version', '11.19.0',
       '--workflow-path', '.github/workflows/windows-cloud-build-test.yml',
       '--workflow-name', 'Windows cloud package qualification',
       '--actor', 'release-operator',
@@ -123,7 +123,7 @@ describe('cloud Windows build manifest', () => {
       cwd: repositoryRoot,
       env: environmentWithOverrides(process.env, {
         GITHUB_SHA: commit,
-        AI_NOVEL_CLOUD_BUILD_PNPM_VERSION: '11.11.0',
+        AI_NOVEL_CLOUD_BUILD_NPM_VERSION: '11.19.0',
         ImageOS: 'win22',
         ImageVersion: '20260726.1',
         AI_NOVEL_RELEASE_EVIDENCE_ROOT: evidenceRoot,
@@ -139,9 +139,9 @@ describe('cloud Windows build manifest', () => {
       platform: 'windows',
       commit,
       version: packageMetadata.version,
-      lockfileSha256: canonicalPnpmLockfileSha256(path.join(repositoryRoot, 'pnpm-lock.yaml')),
+      lockfileSha256: canonicalPackageLockSha256(path.join(repositoryRoot, 'package-lock.json')),
       nodeVersion: process.versions.node,
-      pnpmVersion: '11.11.0',
+      npmVersion: '11.19.0',
       runnerImage: {
         os: 'win22',
         version: '20260726.1',

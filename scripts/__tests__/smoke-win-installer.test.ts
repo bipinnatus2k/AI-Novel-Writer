@@ -538,7 +538,7 @@ describe('Windows installer smoke contract', () => {
     const releaseGate = readFileSync('scripts/release-win-verify.mjs', 'utf8')
     const cloudWorkflow = readFileSync('.github/workflows/windows-cloud-build-test.yml', 'utf8')
     expect(releaseGate).toContain("'smoke:win-v025-upgrade'")
-    expect(cloudWorkflow).toContain('pnpm run build:win')
+    expect(cloudWorkflow).toContain('npm run build:win')
   })
 
   it('records every physical upgrade asset and proves a non-2048 embedding space remains queryable', async () => {

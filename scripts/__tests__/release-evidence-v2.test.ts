@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { canonicalPnpmLockfileSha256 } from '../canonical-pnpm-lockfile-hash.mjs'
+import { canonicalPackageLockSha256 } from '../canonical-package-lock-hash.mjs'
 
 const testDirectory = path.dirname(fileURLToPath(import.meta.url))
 const repositoryRoot = path.resolve(testDirectory, '..', '..')
@@ -81,7 +81,7 @@ describe('release evidence v2 CLI', () => {
       '--image-os', 'win22',
       '--image-version', '20260726.1',
       '--expected-node-version', process.versions.node,
-      '--expected-pnpm-version', '11.11.0',
+      '--expected-npm-version', '11.19.0',
       '--workflow-path', '.github/workflows/windows-cloud-build-test.yml',
       '--workflow-name', 'Windows cloud package qualification',
       '--actor', 'release-operator',
@@ -140,11 +140,11 @@ describe('release evidence v2 CLI', () => {
     expect(contract.frozen.appToolchain).toMatchObject({
       expectedNodeVersion: process.versions.node,
       actualNodeVersion: process.versions.node,
-      expectedPackageManagerVersion: '11.11.0',
-      actualPackageManagerVersion: '11.11.0',
+      expectedPackageManagerVersion: '11.19.0',
+      actualPackageManagerVersion: '11.19.0',
       source: {
         expectedNodeVersion: 'qualification workflow init --expected-node-version',
-        actualPackageManagerVersion: 'pnpm --version',
+        actualPackageManagerVersion: 'npm --version',
       },
     })
     expect(ledger).toMatchObject({
@@ -181,7 +181,7 @@ describe('release evidence v2 CLI', () => {
       '--image-os', 'macos14',
       '--image-version', '20260726.1',
       '--expected-node-version', process.versions.node,
-      '--expected-pnpm-version', '11.11.0',
+      '--expected-npm-version', '11.19.0',
       '--workflow-path', '.github/workflows/macos-arm64-cloud-build.yml',
       '--workflow-name', 'macOS ARM64 cloud package qualification',
       '--actor', 'release-operator',
@@ -235,7 +235,7 @@ describe('release evidence v2 CLI', () => {
       '--image-os', 'macos14',
       '--image-version', '20260726.1',
       '--expected-node-version', process.versions.node,
-      '--expected-pnpm-version', '11.11.0',
+      '--expected-npm-version', '11.19.0',
       '--workflow-path', '.github/workflows/macos-arm64-cloud-build.yml',
       '--workflow-name', 'macOS ARM64 cloud package qualification',
       '--actor', 'release-operator',
@@ -279,7 +279,7 @@ describe('release evidence v2 CLI', () => {
       '--image-os', 'macos13',
       '--image-version', '20260726.1',
       '--expected-node-version', process.versions.node,
-      '--expected-pnpm-version', '11.11.0',
+      '--expected-npm-version', '11.19.0',
       '--workflow-path', '.github/workflows/macos-x64-cloud-build.yml',
       '--workflow-name', 'macOS Intel x64 cloud package qualification',
       '--actor', 'release-operator',
@@ -319,7 +319,7 @@ describe('release evidence v2 CLI', () => {
       '--image-os', 'win22',
       '--image-version', '20260726.1',
       '--expected-node-version', process.versions.node,
-      '--expected-pnpm-version', '11.11.0',
+      '--expected-npm-version', '11.19.0',
       '--workflow-path', '.github/workflows/windows-cloud-build-test.yml',
       '--workflow-name', 'Windows cloud package qualification',
       '--actor', 'release-operator',
@@ -475,7 +475,7 @@ describe('release evidence v2 CLI', () => {
       '--platform', 'windows',
       '--bundle-root', releaseRoot,
       '--expected-commit', 'c'.repeat(40),
-      '--expected-lockfile-sha256', canonicalPnpmLockfileSha256(path.join(repositoryRoot, 'pnpm-lock.yaml')),
+      '--expected-lockfile-sha256', canonicalPackageLockSha256(path.join(repositoryRoot, 'package-lock.json')),
       '--version', version,
     ]
     const missingRunAttempt = spawnSync(process.execPath, verifyArguments, { cwd: repositoryRoot, encoding: 'utf8' })
@@ -516,7 +516,7 @@ describe('release evidence v2 CLI', () => {
     const mismatch = spawnSync(process.execPath, [
       ...baseArguments,
       '--expected-node-version', '0.0.0',
-      '--expected-pnpm-version', '11.11.0',
+      '--expected-npm-version', '11.19.0',
       '--workflow-path', '.github/workflows/windows-cloud-build-test.yml',
       '--workflow-name', 'Windows cloud package qualification',
       '--actor', 'release-operator',

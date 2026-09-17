@@ -6,7 +6,7 @@ const brandingSources = [
   'src/components/settings/SettingsModal.tsx',
   'electron/main.ts',
   'package.json',
-  'pnpm-lock.yaml',
+  'package-lock.json',
   'electron-builder.json5',
   'README.md',
 ]

@@ -50,9 +50,9 @@ describe('renderer browser qualification contract', () => {
   ])('installs Chromium and runs browser qualification in %s', (workflowPath) => {
     const workflow = readRequired(workflowPath)
 
-    expect(workflow).toContain('pnpm exec playwright install chromium')
-    expect(workflow).toContain('pnpm run test:browser')
-    expect(workflow.indexOf('pnpm exec playwright install chromium'))
-      .toBeLessThan(workflow.indexOf('pnpm run test:browser'))
+    expect(workflow).toContain('npx playwright install chromium')
+    expect(workflow).toContain('npm run test:browser')
+    expect(workflow.indexOf('npx playwright install chromium'))
+      .toBeLessThan(workflow.indexOf('npm run test:browser'))
   })
 })

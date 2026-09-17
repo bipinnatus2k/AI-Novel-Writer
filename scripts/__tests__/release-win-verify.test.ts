@@ -560,13 +560,13 @@ describe('Windows release verification orchestration', () => {
   windowsIt('stops after a failed full test preflight without starting release or finalization work', async () => {
     const root = mkdtempSync(join(tmpdir(), 'ai-novel-release-premonitor-failure-'))
     const isolatedTemp = join(root, 'temp')
-    const fakePnpmCli = join(root, 'fake-pnpm.cjs')
+    const fakeNpmCli = join(root, 'fake-npm.cjs')
     const processObserver = join(root, 'observe-node-entrypoints.cjs')
-    const stepMarker = join(root, 'pnpm-steps.txt')
+    const stepMarker = join(root, 'npm-steps.txt')
     const entrypointMarker = join(root, 'node-entrypoints.jsonl')
     mkdirSync(isolatedTemp)
     writeFileSync(
-      fakePnpmCli,
+      fakeNpmCli,
       [
         'const { appendFileSync } = require("node:fs")',
         'const [command, step] = process.argv.slice(2)',
@@ -602,7 +602,7 @@ describe('Windows release verification orchestration', () => {
         cwd: process.cwd(),
         env: {
           ...isolatedEnvironment,
-          npm_execpath: fakePnpmCli,
+          npm_execpath: fakeNpmCli,
           AI_NOVEL_RELEASE_STEP_MARKER: stepMarker,
           AI_NOVEL_RELEASE_ENTRYPOINT_MARKER: entrypointMarker,
           NODE_OPTIONS: `--require=${processObserver}`,
@@ -668,14 +668,14 @@ describe('Windows release verification orchestration', () => {
   windowsIt('stops after monitor marker rename failure without running release finalization', async () => {
     const root = mkdtempSync(join(tmpdir(), 'ai-novel-release-marker-failure-'))
     const isolatedTemp = join(root, 'temp')
-    const fakePnpmCli = join(root, 'fake-pnpm.cjs')
+    const fakeNpmCli = join(root, 'fake-npm.cjs')
     const fileSystemPreload = join(root, 'fail-monitor-marker-rename.cjs')
-    const stepMarker = join(root, 'pnpm-steps.txt')
+    const stepMarker = join(root, 'npm-steps.txt')
     const entrypointMarker = join(root, 'node-entrypoints.jsonl')
     const monitorCapture = join(root, 'monitor-process-capture.json')
     mkdirSync(isolatedTemp)
     writeFileSync(
-      fakePnpmCli,
+      fakeNpmCli,
       [
         'const { appendFileSync } = require("node:fs")',
         'const [command, step] = process.argv.slice(2)',
@@ -728,7 +728,7 @@ describe('Windows release verification orchestration', () => {
         cwd: process.cwd(),
         env: {
           ...isolatedEnvironment,
-          npm_execpath: fakePnpmCli,
+          npm_execpath: fakeNpmCli,
           AI_NOVEL_RELEASE_STEP_MARKER: stepMarker,
           AI_NOVEL_RELEASE_ENTRYPOINT_MARKER: entrypointMarker,
           AI_NOVEL_RELEASE_MONITOR_CAPTURE: monitorCapture,
