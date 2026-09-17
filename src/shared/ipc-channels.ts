@@ -470,12 +470,15 @@ export interface LLMChannels {
 
 export interface LLMStreamEvents {
   'llm:stream-chunk': { requestId: string; chunk: string }
+  'llm:stream-reasoning': { requestId: string; delta: string }
   'llm:stream-done': {
     requestId: string
     fullText: string
     usage?: TokenUsage
     /** Main-process-normalized completion state. Missing provider values become `unknown`. */
     finishReason: LLMFinishReason
+    /** 主进程从文本方言中解析出的工具调用。 */
+    toolCalls?: LLMToolCall[]
   }
   'llm:stream-error': { requestId: string; error: string }
 }
@@ -629,10 +632,20 @@ export interface ModelExecutionLeaseReceipt {
   expiresAt: number
 }
 
+/** 传输层从模型文本方言中解析出的结构化工具调用。 */
+export interface LLMToolCall {
+  name: string
+  args: Record<string, unknown>
+}
+
 interface LLMResponseBase {
   content: string
   usage?: TokenUsage
   error?: string
+  /** 模型推理内容（think 块 / reasoning 增量），从不进入 content。 */
+  reasoning?: string
+  /** 传输层解析出的工具调用；弱端点文本方言由主进程统一解析。 */
+  toolCalls?: LLMToolCall[]
 }
 
 /** Every non-stream response carries explicit terminal evidence. */

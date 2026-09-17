@@ -4,7 +4,7 @@ import { createAnthropic } from '@ai-sdk/anthropic'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import type { ILLMProvider, LLMGenerateOptions, LLMResponse, LLMStreamOptions } from '../provider.interface'
-import type { LLMFinishReason, TokenUsage } from '../../../src/shared/ipc-channels'
+import type { LLMFinishReason, LLMToolCall, TokenUsage } from '../../../src/shared/ipc-channels'
 import type { ModelProfile } from '../../../src/shared/ipc-channels'
 import type { ProviderReasoningDirective } from '../../../src/shared/reasoning-types'
 import {
@@ -16,7 +16,7 @@ import {
   transformOpenAiRequestBody,
   type ModelContext,
 } from './model-factory'
-import { stripThinkingTags, THINK_CLOSE_MARKER, THINK_OPEN_MARKER } from './think-tags'
+import { ProtocolSegmenter, segmentProtocolText } from './protocol-segmenter'
 
 /** The AI SDK reports success only with explicit semantic stop evidence,
  * matching the legacy provider contract downstream workflows rely on. */
@@ -109,8 +109,10 @@ interface WideStreamPart {
 /**
  * Transport implementation over the Vercel AI SDK. URL construction, SSE
  * parsing, usage extraction and finish reasons are owned by the SDK; vendor
- * payload compatibility stays in request-quirks. Retries stay disabled:
- * generation side effects are billed per call and callers own attempt budgets.
+ * payload compatibility stays in request-quirks and model-text dialects
+ * (think blocks, DSML tool calls) are segmented out by ProtocolSegmenter so
+ * protocol text never reaches the UI. Retries stay disabled: generation side
+ * effects are billed per call and callers own attempt budgets.
  */
 /** Anthropic extended thinking：budget > 0 时启用 thinking，并必须省略
  * temperature（Anthropic 要求 thinking 启用时采样参数取默认值 1）。 */
@@ -143,15 +145,21 @@ export class AiSdkProvider implements ILLMProvider {
 
       const finishReason = mapFinishReason(result.finishReason)
       const usage = mapUsage(result.usage)
-      const content = stripThinkingTags(result.text)
+      // 正文与推理在传输层分离：think 块与工具调用方言永不进入 content
+      const segmented = segmentProtocolText(result.text)
+      const content = segmented.content
+      const reasoning = segmented.reasoning || undefined
+      const toolCalls = segmented.toolCalls.length > 0 ? segmented.toolCalls : undefined
       if (finishReason === 'stop') {
-        return { success: true, content, finishReason, usage }
+        return { success: true, content, finishReason, usage, reasoning, toolCalls }
       }
       return {
         success: false,
         content,
         finishReason,
         usage,
+        reasoning,
+        toolCalls,
         error: 'API 返回的文本未正常完成',
       }
     } catch (error) {
@@ -167,9 +175,9 @@ export class AiSdkProvider implements ILLMProvider {
     let fullText = ''
     let usage: TokenUsage | undefined
     let finishReason: LLMFinishReason = 'unknown'
+    let toolCalls: LLMToolCall[] | undefined
     const fail = (error: string) => {
-      const visibleCandidate = stripThinkingTags(fullText)
-      opts.onError(error, visibleCandidate || undefined, usage)
+      opts.onError(error, fullText || undefined, usage)
     }
 
     try {
@@ -187,8 +195,10 @@ export class AiSdkProvider implements ILLMProvider {
         maxRetries: 0,
       })
 
-      let isThinking = false
-      const emit = (chunk: string) => {
+      // 协议分段器：think 推理与工具调用方言在这里截住，正文增量才外发
+      const segmenter = new ProtocolSegmenter()
+      const emitContent = (chunk: string) => {
+        if (!chunk) return
         fullText += chunk
         opts.onChunk(chunk)
       }
@@ -196,17 +206,11 @@ export class AiSdkProvider implements ILLMProvider {
       const parts: AsyncIterable<WideStreamPart> = result.fullStream
       for await (const part of parts) {
         if (part.type === 'reasoning-delta') {
-          if (!isThinking) {
-            isThinking = true
-            emit(THINK_OPEN_MARKER)
-          }
-          emit(part.text ?? '')
+          opts.onReasoning?.(part.text ?? '')
         } else if (part.type === 'text-delta') {
-          if (isThinking) {
-            isThinking = false
-            emit(THINK_CLOSE_MARKER)
-          }
-          emit(part.text ?? '')
+          const segmented = segmenter.push(part.text ?? '')
+          if (segmented.reasoning) opts.onReasoning?.(segmented.reasoning)
+          emitContent(segmented.content ?? '')
         } else if (part.type === 'error') {
           throw part.error instanceof Error ? part.error : new Error(String(part.error))
         } else if (part.type === 'abort') {
@@ -219,8 +223,11 @@ export class AiSdkProvider implements ILLMProvider {
         }
       }
 
-      if (isThinking) emit(THINK_CLOSE_MARKER)
-      opts.onDone(stripThinkingTags(fullText), usage, finishReason)
+      const flushed = segmenter.finish()
+      if (flushed.reasoning) opts.onReasoning?.(flushed.reasoning)
+      emitContent(flushed.content ?? '')
+      if (segmenter.toolCalls.length > 0) toolCalls = segmenter.toolCalls
+      opts.onDone(fullText, usage, finishReason, toolCalls)
     } catch (error) {
       if ((error as Error).name === 'AbortError') {
         fail('已取消生成')

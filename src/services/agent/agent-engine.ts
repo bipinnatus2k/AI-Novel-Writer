@@ -19,7 +19,7 @@ import {
 } from './tool-registry'
 import { createAgentExecutionContext } from './tools/project-context'
 import { writingLanguageText, type WritingLanguage } from '../../shared/writing-language'
-import type { FileWriteCommitState } from '../../shared/ipc-channels'
+import type { FileWriteCommitState, LLMToolCall } from '../../shared/ipc-channels'
 
 // ===== 常量 =====
 
@@ -64,6 +64,8 @@ export interface ToolConfirmationDecision {
 export interface AgentEngineCallbacks {
   /** 流式文本片段 */
   onTextChunk: (chunk: string) => void
+  /** 本轮模型推理内容（think 块 / reasoning 通道） */
+  onReasoningChunk?: (reasoning: string) => void
   /** Tool 调用开始 */
   onToolCallStart: (toolCall: ToolCallInfo) => void
   /** Tool 调用完成 */
@@ -82,11 +84,20 @@ export interface LLMMessage {
   content: string
 }
 
+/** 一轮生成的结果：正文已在传输层与推理、工具调用方言分离。 */
+export interface AgentGenerationResult {
+  content: string
+  /** 传输层从文本方言中解析出的结构化工具调用。 */
+  toolCalls?: LLMToolCall[]
+  /** 模型推理内容（think 块 / reasoning 通道）。 */
+  reasoning?: string
+}
+
 /** LLM 生成函数签名（由 agent-store 提供实际实现） */
 export type LLMGenerateFn = (
   messages: LLMMessage[],
   modelId: string,
-) => Promise<string>
+) => Promise<AgentGenerationResult>
 
 const TOOL_CALL_BLOCK = /<(tool_call|｜DSML｜tool_call)>[\s\S]*?<\/\1>/g
 const TOOL_CALL_TAG = /<\/?(?:tool_call|｜DSML｜tool_call)>/g
@@ -156,9 +167,9 @@ export async function runAgentLoop(
     rounds++
 
     // 调用 LLM
-    let llmResponse: string
+    let generation: AgentGenerationResult
     try {
-      llmResponse = await generateFn(messages, modelId ?? '')
+      generation = await generateFn(messages, modelId ?? '')
     } catch {
       if (abortSignal?.aborted) {
         callbacks.onDone(fullAssistantText + uiText('\n\n_（已停止生成）_', '\n\n_(Generation stopped)_'), allToolCalls, allArtifacts)
@@ -174,11 +185,14 @@ export async function runAgentLoop(
       return
     }
 
-    // 解析 LLM 回复：分离文本和 tool_call
-    const { textParts, toolCalls } = parseToolCalls(llmResponse)
+    // 推理内容走独立通道，永不进入正文
+    if (generation.reasoning) {
+      callbacks.onReasoningChunk?.(generation.reasoning)
+    }
 
-    // 输出文本部分（清理可能残留的 tool_call/tool_result 标记）
-    const textContent = cleanAgentVisibleText(textParts.join(''))
+    // 工具调用由传输层从文本方言中解析为结构化结果；正文已不含协议文本
+    const toolCalls = generation.toolCalls ?? []
+    const textContent = cleanAgentVisibleText(generation.content)
     if (textContent) {
       callbacks.onTextChunk(textContent)
       fullAssistantText += textContent
@@ -190,8 +204,13 @@ export async function runAgentLoop(
       return
     }
 
-    // 将 LLM 的完整回复加入历史（包含 tool_call 标签）
-    messages.push({ role: 'assistant', content: llmResponse })
+    // 将 LLM 的完整回复加入历史（以教授给模型的标准格式回填工具调用，保持上下文连续）
+    const historyContent = toolCalls.length > 0
+      ? `${generation.content}\n${toolCalls.map(tc =>
+          `<tool_call>\n${JSON.stringify({ name: tc.name, arguments: tc.args })}\n</tool_call>`,
+        ).join('\n')}`
+      : generation.content
+    messages.push({ role: 'assistant', content: historyContent })
 
     // 依次执行每个 tool_call。配置影响预览中明确选择的蓝图差异会在
     // 配置写入成功后插入此轮，并继续走同一条确认与工具执行路径。
@@ -205,7 +224,7 @@ export async function runAgentLoop(
       const toolCallInfo: ToolCallInfo = {
         id: crypto.randomUUID(),
         toolName: tc.name,
-        arguments: tc.arguments,
+        arguments: tc.args,
         status: 'pending',
         projectSession: executionContext.projectSession,
       }
@@ -259,7 +278,7 @@ export async function runAgentLoop(
       try {
         const result = await executeToolWithTimeout(
           tool.execute,
-          tc.arguments,
+          tc.args,
           Object.freeze({
             ...executionContext,
             markSideEffectStarted: () => { sideEffectStarted = true },
@@ -303,7 +322,11 @@ export async function runAgentLoop(
         if (result.success) {
           observationParts.push(`<tool_result name="${tc.name}">\n${truncatedContent}\n</tool_result>`)
           if (tc.name === 'propose_novel_config' && confirmationDecision.blueprintProposals?.length) {
-            roundToolCalls.splice(toolIndex + 1, 0, ...confirmationDecision.blueprintProposals)
+            roundToolCalls.splice(
+              toolIndex + 1,
+              0,
+              ...confirmationDecision.blueprintProposals.map(proposal => makeTransportToolCall(proposal.name, proposal.arguments)),
+            )
           }
         } else {
           observationParts.push(`<tool_result name="${tc.name}" error="true">\n${modelText('工具执行失败。', 'Tool execution failed.')}\n</tool_result>`)
@@ -367,179 +390,11 @@ export async function runAgentLoop(
 
 // ===== 工具函数 =====
 
-/** 解析的 Tool 调用 */
-interface ParsedToolCall {
-  name: string
-  arguments: Record<string, unknown>
+/** 把结构化调用统一为传输层 LLMToolCall 形状。 */
+function makeTransportToolCall(name: string, args: Record<string, unknown>): LLMToolCall {
+  return { name, args }
 }
 
-/**
- * Some providers emit a function-style tool call as two plain-text lines
- * instead of the XML shape requested by the system prompt.  Treat that form
- * as a command only when it consumes the *entire* response and names a tool
- * already registered for this agent run.  This keeps ordinary prose and
- * arbitrary JSON from acquiring side effects.
- */
-function parseRegisteredRawToolCall(text: string): ParsedToolCall | null {
-  const match = /^\s*([A-Za-z][\w.-]*)[ \t]*\r?\n\s*(\{[\s\S]*\})\s*$/.exec(text)
-  if (!match) return null
-
-  const [, name, rawArguments] = match
-  if (!toolRegistry.get(name)) return null
-
-  try {
-    const argumentsValue: unknown = JSON.parse(rawArguments)
-    if (
-      typeof argumentsValue !== 'object'
-      || argumentsValue === null
-      || Array.isArray(argumentsValue)
-    ) return null
-    return { name, arguments: argumentsValue as Record<string, unknown> }
-  } catch {
-    return null
-  }
-}
-
-function parseRegisteredJsonEnvelope(text: string): ParsedToolCall | null {
-  const envelope = text.trim()
-  if (!envelope.startsWith('{') || !envelope.endsWith('}')) return null
-
-  try {
-    const value: unknown = JSON.parse(envelope)
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-    const keys = Object.keys(value)
-    if (keys.length !== 2 || !keys.includes('name') || !keys.includes('arguments')) return null
-    const { name, arguments: args } = value as Record<string, unknown>
-    if (
-      typeof name !== 'string'
-      || !toolRegistry.get(name)
-      || !args
-      || typeof args !== 'object'
-      || Array.isArray(args)
-    ) return null
-    return { name, arguments: args as Record<string, unknown> }
-  } catch {
-    return null
-  }
-}
-
-function parseTaggedToolCallContent(text: string): ParsedToolCall | null {
-  const emptyTool = /^<([A-Za-z][\w.-]*)>\s*<\/\1>$/.exec(text)
-  if (emptyTool && toolRegistry.get(emptyTool[1])) {
-    return { name: emptyTool[1], arguments: {} }
-  }
-
-  const match = /^<name>\s*([A-Za-z][\w.-]*)\s*<\/name>\s*<arguments>\s*(\{[\s\S]*\})\s*<\/arguments>$/.exec(text)
-  if (!match) return null
-
-  try {
-    const args: unknown = JSON.parse(match[2])
-    if (!args || typeof args !== 'object' || Array.isArray(args)) return null
-    return { name: match[1], arguments: args as Record<string, unknown> }
-  } catch {
-    return null
-  }
-}
-
-/**
- * 从 LLM 输出中解析 <tool_call>...</tool_call> 标签
- *
- * 返回分离后的文本片段和 tool 调用列表。
- * 增强版：支持 JSON 前后有多余文字的容错解析。
- */
-export function parseToolCalls(text: string): {
-  textParts: string[]
-  toolCalls: ParsedToolCall[]
-} {
-  const rawToolCall = parseRegisteredRawToolCall(text)
-  if (rawToolCall) {
-    return { textParts: [], toolCalls: [rawToolCall] }
-  }
-
-  const jsonEnvelope = parseRegisteredJsonEnvelope(text)
-  if (jsonEnvelope) {
-    return { textParts: [], toolCalls: [jsonEnvelope] }
-  }
-
-  const toolCalls: ParsedToolCall[] = []
-  const textParts: string[] = []
-
-  // 匹配标准 XML 或 SiliconFlow DSML 的 tool_call 包装。
-  const regex = /<(tool_call|｜DSML｜tool_call)>\s*([\s\S]*?)\s*<\/\1>/g
-  let lastIndex = 0
-  let match: RegExpExecArray | null = null
-  let matchedProtocolBlock = false
-
-  while ((match = regex.exec(text)) !== null) {
-    matchedProtocolBlock = true
-    // 收集标签前的文本
-    if (match.index > lastIndex) {
-      const before = text.slice(lastIndex, match.index).trim()
-      if (before) textParts.push(before)
-    }
-    lastIndex = regex.lastIndex
-
-    // 解析 JSON（增强容错）
-    const rawContent = match[2].trim()
-    let parsed = false
-
-    // 策略 1：直接解析整个内容
-    try {
-      const data = JSON.parse(rawContent)
-      if (data.name && typeof data.name === 'string') {
-        toolCalls.push({ name: data.name, arguments: data.arguments ?? {} })
-        parsed = true
-      }
-    } catch { /* 尝试容错解析 */ }
-
-    // 策略 2：兼容供应商在 tool_call 内输出严格的 name/arguments 子标签。
-    if (!parsed) {
-      const taggedToolCall = parseTaggedToolCallContent(rawContent)
-      if (taggedToolCall) {
-        toolCalls.push(taggedToolCall)
-        parsed = true
-      }
-    }
-
-    // 策略 3：从内容中提取 JSON 对象（LLM 可能在 JSON 前后加了额外文字）
-    if (!parsed) {
-      const jsonMatch = rawContent.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        try {
-          const data = JSON.parse(jsonMatch[0])
-          if (data.name && typeof data.name === 'string') {
-            toolCalls.push({ name: data.name, arguments: data.arguments ?? {} })
-            parsed = true
-          }
-        } catch {
-          console.warn('[AgentEngine] tool_call JSON 容错解析也失败:', rawContent)
-        }
-      }
-    }
-
-    // 完全解析失败，丢弃该标签（不再打回 textParts，避免泄露 XML）
-    if (!parsed) {
-      console.warn('[AgentEngine] tool_call 标签解析失败，已丢弃:', rawContent)
-    }
-  }
-
-  // 收集最后一个标签后的文本
-  if (lastIndex < text.length) {
-    const after = text.slice(lastIndex).trim()
-    if (after) textParts.push(after)
-  }
-
-  // 如果没有匹配到任何标签，整个文本都是 textParts
-  if (!matchedProtocolBlock && toolCalls.length === 0 && textParts.length === 0) {
-    textParts.push(text)
-  }
-
-  return { textParts, toolCalls }
-}
-
-/**
- * 带超时的 Tool 执行
- */
 async function executeToolWithTimeout(
   executeFn: (
     args: Record<string, unknown>,

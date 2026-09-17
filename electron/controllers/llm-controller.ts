@@ -7,7 +7,7 @@ import {
   GLOBAL_CONFIG_PATH,
   DEFAULT_GLOBAL_CONFIG,
 } from '../utils/config-utils'
-import type { GlobalConfig, LLMFinishReason, LLMRequest, ModelDiscoveryRequest, ModelProfile, TokenUsage } from '../../src/shared/ipc-channels'
+import type { GlobalConfig, LLMFinishReason, LLMRequest, LLMToolCall, ModelDiscoveryRequest, ModelProfile, TokenUsage } from '../../src/shared/ipc-channels'
 import { isProjectSessionContext } from '../../src/shared/project-session-context'
 import { LLMFactory } from '../llm/llm-factory'
 import { resolveGenerationParameters } from '../llm/generation-parameter-policy'
@@ -213,7 +213,8 @@ export function registerLLMController() {
       ...generationParameters,
       signal: abortController.signal,
       onChunk: (chunk: string) => win?.webContents.send('llm:stream-chunk', { requestId, chunk }),
-      onDone: (fullText: string, usage?: TokenUsage, finishReason?: LLMFinishReason) => {
+      onReasoning: (delta: string) => win?.webContents.send('llm:stream-reasoning', { requestId, delta }),
+      onDone: (fullText: string, usage?: TokenUsage, finishReason?: LLMFinishReason, toolCalls?: LLMToolCall[]) => {
         const terminalReason: LLMFinishReason = finishReason ?? 'unknown'
         const success = terminalReason === 'stop'
         recordOnce({ success, usage, error: success ? undefined : `finish:${terminalReason}` })
@@ -222,6 +223,7 @@ export function registerLLMController() {
           fullText,
           usage,
           finishReason: terminalReason,
+          toolCalls,
         })
         activeStreams.delete(requestId)
       },

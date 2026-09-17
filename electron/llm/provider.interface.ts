@@ -1,6 +1,7 @@
 import type {
   LLMFinishReason,
   LLMResponse as SharedLLMResponse,
+  LLMToolCall,
   ModelProfile,
   TokenUsage,
 } from '../../src/shared/ipc-channels'
@@ -20,12 +21,19 @@ export interface LLMGenerateOptions {
 export interface LLMStreamOptions extends LLMGenerateOptions {
   signal: AbortSignal
   onChunk: (chunk: string) => void
+  /** 模型推理内容增量（think 块 / reasoning 通道），从不与正文混流。 */
+  onReasoning?: (delta: string) => void
   /**
    * Signals transport termination and always carries provider-normalized model
    * completion evidence. `unknown` keeps text inspectable but is never proof
    * that a creative workflow may commit it.
    */
-  onDone: (fullText: string, usage: TokenUsage | undefined, finishReason: LLMFinishReason) => void
+  onDone: (
+    fullText: string,
+    usage: TokenUsage | undefined,
+    finishReason: LLMFinishReason,
+    toolCalls?: LLMToolCall[],
+  ) => void
   /** Optional content is the already-delivered visible candidate, never hidden reasoning. */
   onError: (error: string, content?: string, usage?: TokenUsage) => void
 }

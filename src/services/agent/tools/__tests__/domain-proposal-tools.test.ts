@@ -60,8 +60,8 @@ describe('explicit Agent domain proposals', () => {
       onToolCallConfirmRequired: vi.fn(async () => false), onDone: vi.fn(), onError: vi.fn(),
     }
     const generate = vi.fn()
-      .mockResolvedValueOnce('propose_novel_config\n{"changes":{"genre":"科幻"}}')
-      .mockResolvedValueOnce('已取消。')
+      .mockResolvedValueOnce({ content: '', toolCalls: [{ name: 'propose_novel_config', args: { changes: { genre: '科幻' } } }] })
+      .mockResolvedValueOnce({ content: '已取消。' })
     await runAgentLoop('system', [], '改成科幻', 'model', generate, callbacks, undefined, createAgentExecutionContext())
     expect(callbacks.onToolCallConfirmRequired).toHaveBeenCalledOnce()
     expect(invoke).not.toHaveBeenCalled()
@@ -90,8 +90,8 @@ describe('explicit Agent domain proposals', () => {
       onToolCallConfirmRequired: confirmation, onDone: vi.fn(), onError: vi.fn(),
     }
     const generate = vi.fn()
-      .mockResolvedValueOnce('propose_novel_config\n{"changes":{"coreOutline":"蓝钥匙来自旧案"}}')
-      .mockResolvedValueOnce('配置与所选蓝图均已提交。')
+      .mockResolvedValueOnce({ content: '', toolCalls: [{ name: 'propose_novel_config', args: { changes: { coreOutline: '蓝钥匙来自旧案' } } }] })
+      .mockResolvedValueOnce({ content: '配置与所选蓝图均已提交。' })
 
     await runAgentLoop(
       'system', [], '调整旧案线索', 'model', generate, callbacks as never,
@@ -140,8 +140,8 @@ describe('explicit Agent domain proposals', () => {
       onToolCallConfirmRequired: confirmation, onDone: vi.fn(), onError: vi.fn(),
     }
     const generate = vi.fn()
-      .mockResolvedValueOnce('propose_novel_config\n{"changes":{"coreOutline":"蓝钥匙来自旧案"}}')
-      .mockResolvedValueOnce('蓝图更新失败。')
+      .mockResolvedValueOnce({ content: '', toolCalls: [{ name: 'propose_novel_config', args: { changes: { coreOutline: '蓝钥匙来自旧案' } } }] })
+      .mockResolvedValueOnce({ content: '蓝图更新失败。' })
 
     await runAgentLoop(
       'system', [], '调整旧案线索', 'model', generate, callbacks as never,

@@ -32,6 +32,7 @@ export interface LeaseCompletionRequest {
   plan: Readonly<PhysicalGenerationPlan>
   signal: AbortSignal
   onChunk?: (chunk: string) => void
+  onReasoning?: (delta: string) => void
 }
 
 /** Renderer adapter for the authoritative main-process model lease seam. */
@@ -193,7 +194,10 @@ function createDefaultEnvironment(): GenerationRuntimeEnvironment {
             onChunk: chunk => {
               if (!settled && !request.signal.aborted) request.onChunk?.(chunk)
             },
-            onDone: (content, usage, finishReason) => succeed({ content, usage, finishReason }),
+            onReasoning: delta => {
+              if (!settled && !request.signal.aborted) request.onReasoning?.(delta)
+            },
+            onDone: (content, usage, finishReason, toolCalls) => succeed({ content, usage, finishReason, toolCalls }),
             onError: fail,
           },
           frozenModelId,
@@ -344,6 +348,7 @@ export async function createGenerationRuntime(
           plan: request.plan,
           signal: request.signal,
           onChunk: request.onChunk,
+          onReasoning: request.onReasoning,
         })
       },
     },

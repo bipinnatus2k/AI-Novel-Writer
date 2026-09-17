@@ -46,6 +46,8 @@ export interface AgentMessage {
   createdAt: number
   /** 是否正在流式生成中 */
   streaming?: boolean
+  /** 模型推理内容（think 块 / reasoning 通道），从不与 content 混流 */
+  reasoning?: string
   /** Tool 调用信息（Agent 回复时） */
   toolCalls?: ToolCallInfo[]
   /** 产物列表（Agent 创建/修改的文件、触发的工作流等） */
@@ -505,7 +507,11 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
                 ))
             }
           }
-          return outcome.content
+          return {
+            content: outcome.content,
+            toolCalls: outcome.toolCalls,
+            reasoning: outcome.reasoning,
+          }
         },
         {
           onTextChunk: (chunk) => {
@@ -514,6 +520,12 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
             updateAssistantMsg(m => ({
               ...m,
               content: m.content + cleaned,
+            }))
+          },
+          onReasoningChunk: (reasoning) => {
+            updateAssistantMsg(m => ({
+              ...m,
+              reasoning: (m.reasoning ?? '') + reasoning,
             }))
           },
           onToolCallStart: (toolCall) => {

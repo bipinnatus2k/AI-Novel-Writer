@@ -332,7 +332,7 @@ describe('AiSdkProvider completion evidence', () => {
     expect(errors[0]).toContain('finish reason')
   })
 
-  it('wraps streamed reasoning deltas in think markers and strips them from the final text', async () => {
+  it('routes streamed reasoning deltas through the dedicated channel, never into content', async () => {
     installFetchMock(() => sseResponse([
       'data: {"choices":[{"delta":{"reasoning_content":"构思中"}}]}\n\n',
       'data: {"choices":[{"delta":{"content":"可见文本"}}]}\n\n',
@@ -340,12 +340,23 @@ describe('AiSdkProvider completion evidence', () => {
       'data: [DONE]\n\n',
     ]))
     const provider = new AiSdkProvider()
+    const reasoningDeltas: string[] = []
+    const contentChunks: string[] = []
+    const dones: Array<[string, unknown, string]> = []
 
-    const { chunks, done } = await collectStream(provider, novelAIModel)
+    await provider.generateStream(novelAIModel, baseMessages, {
+      temperature: 0.7,
+      maxTokens: 4096,
+      signal: new AbortController().signal,
+      onReasoning: delta => reasoningDeltas.push(delta),
+      onChunk: chunk => contentChunks.push(chunk),
+      onDone: (text, usage, finishReason) => dones.push([text, usage, finishReason]),
+      onError: error => { throw new Error(error) },
+    })
 
-    expect(chunks.join('')).toContain('<think>')
-    expect(chunks.join('')).toContain('</think>')
-    expect(done[0][0]).toBe('可见文本')
+    expect(reasoningDeltas.join('')).toBe('构思中')
+    expect(contentChunks.join('')).toBe('可见文本')
+    expect(dones[0]?.[0]).toBe('可见文本')
   })
 
   it('reports cancellation through the cancel channel', async () => {

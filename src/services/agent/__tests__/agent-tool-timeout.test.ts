@@ -54,8 +54,8 @@ describe('Agent tool timeout boundary', () => {
     const run = runAgentLoop(
       'system', [], 'read', 'model',
       vi.fn()
-        .mockResolvedValueOnce('<tool_call>{"name":"timeout_read_probe","arguments":{}}</tool_call>')
-        .mockResolvedValueOnce('done'),
+        .mockResolvedValueOnce({ content: '', toolCalls: [{ name: 'timeout_read_probe', args: {} }] })
+        .mockResolvedValueOnce({ content: 'done' }),
       ui,
       undefined,
       context(),
@@ -89,8 +89,8 @@ describe('Agent tool timeout boundary', () => {
     const run = runAgentLoop(
       'system', [], 'write', 'model',
       vi.fn()
-        .mockResolvedValueOnce('<tool_call>{"name":"timeout_write_probe","arguments":{}}</tool_call>')
-        .mockResolvedValueOnce('done'),
+        .mockResolvedValueOnce({ content: '', toolCalls: [{ name: 'timeout_write_probe', args: {} }] })
+        .mockResolvedValueOnce({ content: 'done' }),
       ui,
       undefined,
       context(),
@@ -127,8 +127,8 @@ describe('Agent tool timeout boundary', () => {
     const run = runAgentLoop(
       'system', [], 'write', 'model',
       vi.fn()
-        .mockResolvedValueOnce('<tool_call>{"name":"delayed_write_probe","arguments":{}}</tool_call>')
-        .mockResolvedValueOnce('done'),
+        .mockResolvedValueOnce({ content: '', toolCalls: [{ name: 'delayed_write_probe', args: {} }] })
+        .mockResolvedValueOnce({ content: 'done' }),
       ui,
       undefined,
       context(),
@@ -169,7 +169,7 @@ describe('Agent tool timeout boundary', () => {
     const ui = callbacks()
     const run = runAgentLoop(
       'system', [], 'write', 'model',
-      vi.fn().mockResolvedValue('<tool_call>{"name":"cancelled_write_probe","arguments":{}}</tool_call>'),
+      vi.fn().mockResolvedValue({ content: '', toolCalls: [{ name: 'cancelled_write_probe', args: {} }] }),
       ui,
       controller.signal,
       context(),
@@ -197,8 +197,8 @@ describe('Agent tool timeout boundary', () => {
     })
     const ui = callbacks()
     const generate = vi.fn()
-      .mockResolvedValueOnce('<tool_call>{"name":"unknown_write_probe","arguments":{}}</tool_call>')
-      .mockResolvedValueOnce('<tool_call>{"name":"unknown_write_probe","arguments":{}}</tool_call>')
+      .mockResolvedValueOnce({ content: '', toolCalls: [{ name: 'unknown_write_probe', args: {} }] })
+      .mockResolvedValueOnce({ content: '', toolCalls: [{ name: 'unknown_write_probe', args: {} }] })
 
     await runAgentLoop('system', [], 'write', 'model', generate, ui, undefined, context())
 
@@ -233,8 +233,8 @@ describe('Agent tool timeout boundary', () => {
     })
     const ui = callbacks()
     const generate = vi.fn()
-      .mockResolvedValueOnce('<tool_call>{"name":"returned_unknown_write_probe","arguments":{}}</tool_call>')
-      .mockResolvedValueOnce('<tool_call>{"name":"returned_unknown_write_probe","arguments":{}}</tool_call>')
+      .mockResolvedValueOnce({ content: '', toolCalls: [{ name: 'returned_unknown_write_probe', args: {} }] })
+      .mockResolvedValueOnce({ content: '', toolCalls: [{ name: 'returned_unknown_write_probe', args: {} }] })
 
     await runAgentLoop('system', [], 'write', 'model', generate, ui, undefined, context())
 
@@ -260,8 +260,8 @@ describe('Agent tool timeout boundary', () => {
     })
     const ui = callbacks()
     const generate = vi.fn()
-      .mockResolvedValueOnce('<tool_call>{"name":"returned_not_committed_write_probe","arguments":{}}</tool_call>')
-      .mockResolvedValueOnce('handled')
+      .mockResolvedValueOnce({ content: '', toolCalls: [{ name: 'returned_not_committed_write_probe', args: {} }] })
+      .mockResolvedValueOnce({ content: 'handled' })
 
     await runAgentLoop('system', [], 'write', 'model', generate, ui, undefined, context())
 
@@ -282,8 +282,8 @@ describe('Agent tool timeout boundary', () => {
     await runAgentLoop(
       'system', [], 'write', 'model',
       vi.fn()
-        .mockResolvedValueOnce('<tool_call>{"name":"precommit_failure_probe","arguments":{}}</tool_call>')
-        .mockResolvedValueOnce('handled'),
+        .mockResolvedValueOnce({ content: '', toolCalls: [{ name: 'precommit_failure_probe', args: {} }] })
+        .mockResolvedValueOnce({ content: 'handled' }),
       ui,
       undefined,
       context(),
@@ -305,8 +305,8 @@ describe('Agent tool timeout boundary', () => {
     await runAgentLoop(
       'system', [], 'read', 'model',
       vi.fn()
-        .mockResolvedValueOnce('<tool_call>{"name":"read_failure_probe","arguments":{}}</tool_call>')
-        .mockResolvedValueOnce('handled'),
+        .mockResolvedValueOnce({ content: '', toolCalls: [{ name: 'read_failure_probe', args: {} }] })
+        .mockResolvedValueOnce({ content: 'handled' }),
       ui,
       undefined,
       context(),

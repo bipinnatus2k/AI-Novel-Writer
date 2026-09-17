@@ -11,6 +11,7 @@ import { Check, Copy } from 'lucide-react'
 import type { AgentMessage as AgentMessageType } from '../../../stores/agent-store'
 import { useLocaleStore } from '../../../stores/locale-store'
 import MarkdownContent, { StreamingCursor } from '../../ui/MarkdownContent'
+import ThinkingBlock from '../../ui/ThinkingBlock'
 import ToolCallBlock from './ToolCallBlock'
 import ConfirmCard from './ConfirmCard'
 import ArtifactCard from './ArtifactCard'
@@ -21,7 +22,7 @@ interface Props {
 }
 
 export default function AgentMessage({ message }: Props) {
-  const { role, content, streaming, toolCalls, artifacts } = message
+  const { role, content, streaming, reasoning, toolCalls, artifacts } = message
   const text = useLocaleStore(state => state.text)
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const copyMessage = async () => {
@@ -76,6 +77,15 @@ export default function AgentMessage({ message }: Props) {
         className="max-w-full text-xs leading-relaxed break-words w-full"
         style={{ color: 'var(--color-text)' }}
       >
+        {/* 模型推理内容（think 块 / reasoning 通道），折叠展示 */}
+        {reasoning && (
+          <ThinkingBlock
+            thinking={reasoning}
+            showCursor={Boolean(streaming) && !content}
+            hasContent={Boolean(content)}
+          />
+        )}
+
         {/* 文本内容 */}
         {content ? (
           <MarkdownContent content={content} streaming={streaming} />

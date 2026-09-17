@@ -4,6 +4,7 @@ import { requireIpcSuccess } from '../services/ipc-result'
 import { alertError } from '../components/ui/AlertDialog'
 import type {
   LLMFinishReason,
+  LLMToolCall,
   ModelDiscoveryResult,
   ModelDiscoveryRequest,
   ModelProfile,
@@ -17,7 +18,14 @@ import { useProjectStore } from './project-store'
 /** 流式生成的回调 */
 interface StreamCallbacks {
   onChunk?: (chunk: string) => void
-  onDone?: (fullText: string, usage: TokenUsage | undefined, finishReason: LLMFinishReason) => void
+  /** 模型推理内容增量（think 块 / reasoning 通道），从不与正文混流。 */
+  onReasoning?: (delta: string) => void
+  onDone?: (
+    fullText: string,
+    usage: TokenUsage | undefined,
+    finishReason: LLMFinishReason,
+    toolCalls?: LLMToolCall[],
+  ) => void
   onError?: (error: string) => void
 }
 
@@ -204,9 +212,15 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
       }
     })
 
+    const unsubReasoning = ipc.on('llm:stream-reasoning', (data) => {
+      if (data.requestId === requestId) {
+        callbacks.onReasoning?.(data.delta)
+      }
+    })
+
     const unsubDone = ipc.on('llm:stream-done', (data) => {
       if (data.requestId === requestId) {
-        callbacks.onDone?.(data.fullText, data.usage, data.finishReason ?? 'unknown')
+        callbacks.onDone?.(data.fullText, data.usage, data.finishReason ?? 'unknown', data.toolCalls)
         cleanup()
       }
     })
@@ -220,6 +234,7 @@ export const useLLMStore = create<LLMState>()((set, get) => ({
 
     const cleanup = () => {
       unsubChunk()
+      unsubReasoning()
       unsubDone()
       unsubError()
       const reqs = new Map(get().activeRequests)

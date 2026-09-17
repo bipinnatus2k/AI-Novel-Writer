@@ -1,10 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { cleanAgentVisibleText, parseToolCalls, runAgentLoop } from '../agent-engine'
+import { runAgentLoop } from '../agent-engine'
+import type { AgentGenerationResult } from '../agent-engine'
 import { toolRegistry } from '../tool-registry'
 import { requireAgentProject } from '../tools/project-context'
-
-const RAW_START_WORKFLOW = 'start_workflow\n{"workflow":"generate_draft","chapter_number":1}'
 
 function registerStartWorkflow(execute = vi.fn(async () => ({ success: true, content: '工作流已登记' }))) {
   toolRegistry.register({
@@ -22,6 +21,7 @@ function registerStartWorkflow(execute = vi.fn(async () => ({ success: true, con
 function callbacks(confirmed: boolean) {
   return {
     onTextChunk: vi.fn(),
+    onReasoningChunk: vi.fn(),
     onToolCallStart: vi.fn(),
     onToolCallComplete: vi.fn(),
     onToolCallConfirmRequired: vi.fn(async () => confirmed),
@@ -37,8 +37,8 @@ afterEach(() => {
   toolRegistry.unregister('list_chapters')
 })
 
-describe('Agent raw tool-call compatibility', () => {
-  it('recognizes a whole registered name-plus-JSON response without surfacing it as prose', async () => {
+describe('Agent structured tool-call loop', () => {
+  it('executes a structured tool call and keeps protocol text out of prose', async () => {
     const execute = registerStartWorkflow()
     const sink = callbacks(true)
     const startStatuses: string[] = []
@@ -46,8 +46,11 @@ describe('Agent raw tool-call compatibility', () => {
       startStatuses.push(toolCall.status)
     })
     const generate = vi.fn()
-      .mockResolvedValueOnce(RAW_START_WORKFLOW)
-      .mockResolvedValueOnce('已开始生成第一章。')
+      .mockResolvedValueOnce({
+        content: '',
+        toolCalls: [{ name: 'start_workflow', args: { workflow: 'generate_draft', chapter_number: 1 } }],
+      } satisfies AgentGenerationResult)
+      .mockResolvedValueOnce({ content: '已开始生成第一章。' })
 
     await runAgentLoop('system', [], '生成第一章', 'model', generate, sink)
 
@@ -71,7 +74,7 @@ describe('Agent raw tool-call compatibility', () => {
     )
   })
 
-  it('does not execute a raw write command when the user declines confirmation', async () => {
+  it('does not execute a structured write command when the user declines confirmation', async () => {
     const execute = registerStartWorkflow()
     const sink = callbacks(false)
     const startStatuses: string[] = []
@@ -83,8 +86,11 @@ describe('Agent raw tool-call compatibility', () => {
       completionStatuses.push(toolCall.status)
     })
     const generate = vi.fn()
-      .mockResolvedValueOnce(RAW_START_WORKFLOW)
-      .mockResolvedValueOnce('好的，未启动第一章。')
+      .mockResolvedValueOnce({
+        content: '',
+        toolCalls: [{ name: 'start_workflow', args: { workflow: 'generate_draft', chapter_number: 1 } }],
+      } satisfies AgentGenerationResult)
+      .mockResolvedValueOnce({ content: '好的，未启动第一章。' })
 
     await runAgentLoop('system', [], '生成第一章', 'model', generate, sink)
 
@@ -95,14 +101,15 @@ describe('Agent raw tool-call compatibility', () => {
     expect(completionStatuses).toEqual(['failed'])
     expect(execute).not.toHaveBeenCalled()
     expect(sink.onTextChunk).toHaveBeenCalledWith('好的，未启动第一章。')
-    expect(sink.onTextChunk).not.toHaveBeenCalledWith(expect.stringContaining('start_workflow'))
   })
 
   it('keeps prose with trailing JSON inert even when it names a registered write tool', async () => {
     const execute = registerStartWorkflow()
     const sink = callbacks(true)
     const generate = vi.fn()
-      .mockResolvedValueOnce('好的，我来启动。\n\n{"name":"start_workflow","arguments":{"workflow":"generate_draft","chapter_number":1}}')
+      .mockResolvedValueOnce({
+        content: '好的，我来启动。\n\n{"name":"start_workflow","arguments":{"workflow":"generate_draft","chapter_number":1}}',
+      } satisfies AgentGenerationResult)
 
     await runAgentLoop('system', [], '生成第一章', 'model', generate, sink)
 
@@ -131,8 +138,8 @@ describe('Agent raw tool-call compatibility', () => {
       startStatuses.push(toolCall.status)
     })
     const generate = vi.fn()
-      .mockResolvedValueOnce('status_probe\n{}')
-      .mockResolvedValueOnce('状态已读取。')
+      .mockResolvedValueOnce({ content: '', toolCalls: [{ name: 'status_probe', args: {} }] })
+      .mockResolvedValueOnce({ content: '状态已读取。' })
 
     await runAgentLoop('system', [], '读取状态', 'model', generate, sink)
 
@@ -143,86 +150,27 @@ describe('Agent raw tool-call compatibility', () => {
     expect(execute).toHaveBeenCalledOnce()
   })
 
-  it('executes a registered tool when the provider nests name and arguments tags', async () => {
-    const execute = vi.fn(async () => ({ success: true, content: 'Four finalized chapters' }))
+  it('keeps reasoning on the dedicated channel and out of prose', async () => {
     toolRegistry.register({
-      name: 'list_chapters',
-      description: 'list chapters',
+      name: 'status_probe',
+      description: 'test read-only status probe',
       source: 'builtin',
       inputSchema: { type: 'object', properties: {} },
       requiresConfirmation: false,
       isReadOnly: true,
-      execute,
+      execute: vi.fn(async () => ({ success: true, content: '状态已读取' })),
     })
     const sink = callbacks(true)
     const generate = vi.fn()
-      .mockResolvedValueOnce(`I'll inspect the completed chapters first.
-<tool_call>
-<name>list_chapters</name>
-<arguments>
-{}
-</arguments>
-</tool_call>`)
-      .mockResolvedValueOnce('All four chapters are finalized.')
+      .mockResolvedValueOnce({
+        content: '状态已读取。',
+        reasoning: '先读取状态再回答。',
+      })
 
-    await runAgentLoop('system', [], 'Inspect all four chapters', 'model', generate, sink)
+    await runAgentLoop('system', [], '读取状态', 'model', generate, sink)
 
-    expect(execute).toHaveBeenCalledOnce()
-    expect(generate).toHaveBeenCalledTimes(2)
-    expect(sink.onDone).toHaveBeenCalledWith(
-      "I'll inspect the completed chapters first.All four chapters are finalized.",
-      [expect.objectContaining({ toolName: 'list_chapters', status: 'completed' })],
-      [],
-    )
-  })
-
-  it('executes a registered no-argument tool from one empty direct child tag', async () => {
-    const execute = vi.fn(async () => ({ success: true, content: 'Blueprints loaded' }))
-    toolRegistry.register({
-      name: 'read_blueprint',
-      description: 'read blueprints',
-      source: 'builtin',
-      inputSchema: { type: 'object', properties: {} },
-      requiresConfirmation: false,
-      isReadOnly: true,
-      execute,
-    })
-    const sink = callbacks(true)
-    const generate = vi.fn()
-      .mockResolvedValueOnce(`I'll read each chapter blueprint first.
-<tool_call>
-<read_blueprint>
-</read_blueprint>
-</tool_call>`)
-      .mockResolvedValueOnce('All four chapter blueprints were inspected.')
-
-    await runAgentLoop('system', [], 'Inspect all four chapters', 'model', generate, sink)
-
-    expect(execute).toHaveBeenCalledWith({}, expect.any(Object))
-    expect(generate).toHaveBeenCalledTimes(2)
-    expect(sink.onDone).toHaveBeenCalledWith(
-      "I'll read each chapter blueprint first.All four chapter blueprints were inspected.",
-      [expect.objectContaining({ toolName: 'read_blueprint', arguments: {}, status: 'completed' })],
-      [],
-    )
-  })
-
-  it.each([
-    ['unknown tool', '<tool_call><unknown_tool>\n</unknown_tool></tool_call>'],
-    ['non-empty content', '<tool_call><read_blueprint>chapter 1</read_blueprint></tool_call>'],
-    ['tag attributes', '<tool_call><read_blueprint chapter="1">\n</read_blueprint></tool_call>'],
-  ])('rejects an empty-tag tool call with %s', (_label, response) => {
-    toolRegistry.register({
-      name: 'read_blueprint',
-      description: 'read blueprints',
-      source: 'builtin',
-      inputSchema: { type: 'object', properties: {} },
-      requiresConfirmation: false,
-      isReadOnly: true,
-      execute: vi.fn(),
-    })
-
-    expect(parseToolCalls(response)).toEqual({ textParts: [], toolCalls: [] })
+    expect(sink.onReasoningChunk).toHaveBeenCalledWith('先读取状态再回答。')
+    expect(sink.onTextChunk).toHaveBeenCalledWith('状态已读取。')
   })
 
   it('uses the frozen UI locale for tool cards and writing language for model observations', async () => {
@@ -240,8 +188,8 @@ describe('Agent raw tool-call compatibility', () => {
     })
     const sink = callbacks(true)
     const generate = vi.fn()
-      .mockResolvedValueOnce('status_probe\n{}')
-      .mockResolvedValueOnce('The project is not open.')
+      .mockResolvedValueOnce({ content: '', toolCalls: [{ name: 'status_probe', args: {} }] })
+      .mockResolvedValueOnce({ content: 'The project is not open.' })
 
     await runAgentLoop(
       'system',
@@ -287,8 +235,8 @@ describe('Agent raw tool-call compatibility', () => {
     })
     const sink = callbacks(true)
     const generate = vi.fn()
-      .mockResolvedValueOnce('status_probe\n{}')
-      .mockResolvedValueOnce('已了解。')
+      .mockResolvedValueOnce({ content: '', toolCalls: [{ name: 'status_probe', args: {} }] })
+      .mockResolvedValueOnce({ content: '已了解。' })
 
     await runAgentLoop(
       'system',
@@ -367,8 +315,8 @@ describe('Agent raw tool-call compatibility', () => {
   it('keeps English UI errors separate from Chinese model observations', async () => {
     const sink = callbacks(true)
     const generate = vi.fn()
-      .mockResolvedValueOnce('<tool_call>{"name":"missing_probe","arguments":{}}</tool_call>')
-      .mockResolvedValueOnce('已了解。')
+      .mockResolvedValueOnce({ content: '', toolCalls: [{ name: 'missing_probe', args: {} }] })
+      .mockResolvedValueOnce({ content: '已了解。' })
 
     await runAgentLoop(
       'system',
@@ -396,7 +344,7 @@ describe('Agent raw tool-call compatibility', () => {
     expect(observation).not.toContain('The following are tool results')
   })
 
-  it('executes a SiliconFlow DSML tool call without exposing the protocol as prose', async () => {
+  it('re-serializes structured tool calls into the conversation history in the taught format', async () => {
     const execute = vi.fn(async () => ({ success: true, content: '蓝图已读取' }))
     toolRegistry.register({
       name: 'status_probe',
@@ -409,86 +357,15 @@ describe('Agent raw tool-call compatibility', () => {
     })
     const sink = callbacks(true)
     const generate = vi.fn()
-      .mockResolvedValueOnce('<｜DSML｜tool_call>\n{"name":"status_probe","arguments":{}}\n</｜DSML｜tool_call>')
-      .mockResolvedValueOnce('蓝图已读取。')
+      .mockResolvedValueOnce({ content: '', toolCalls: [{ name: 'status_probe', args: {} }] })
+      .mockResolvedValueOnce({ content: '蓝图已读取。' })
 
     await runAgentLoop('system', [], '读取蓝图', 'model', generate, sink)
 
+    const secondRequest = generate.mock.calls[1]?.[0] as Array<{ role: string; content: string }>
+    const assistantTurn = secondRequest.filter(m => m.role === 'assistant').at(-1)?.content ?? ''
+    expect(assistantTurn).toContain('<tool_call>')
+    expect(assistantTurn).toContain('"status_probe"')
     expect(execute).toHaveBeenCalledOnce()
-    expect(sink.onTextChunk).toHaveBeenCalledTimes(1)
-    expect(sink.onTextChunk).toHaveBeenCalledWith('蓝图已读取。')
-    expect(sink.onDone).toHaveBeenCalledWith(
-      '蓝图已读取。',
-      [expect.objectContaining({ toolName: 'status_probe', status: 'completed' })],
-      [],
-    )
-  })
-
-  it('executes one registered read tool from a whole-response JSON envelope', async () => {
-    const execute = vi.fn(async () => ({ success: true, content: '第 2 章蓝图已读取' }))
-    toolRegistry.register({
-      name: 'read_blueprint',
-      description: 'read one blueprint',
-      source: 'builtin',
-      inputSchema: { type: 'object', properties: {} },
-      requiresConfirmation: false,
-      isReadOnly: true,
-      execute,
-    })
-    const sink = callbacks(true)
-    const generate = vi.fn()
-      .mockResolvedValueOnce('{"name": "read_blueprint", "arguments": {"chapter_number": 2}}')
-      .mockResolvedValueOnce('第 2 章蓝图显示作者指导为空。')
-
-    await runAgentLoop('system', [], '读取第2章蓝图', 'model', generate, sink)
-
-    expect(execute).toHaveBeenCalledOnce()
-    expect(execute).toHaveBeenCalledWith({ chapter_number: 2 }, expect.any(Object))
-    expect(sink.onToolCallConfirmRequired).not.toHaveBeenCalled()
-    expect(sink.onTextChunk).toHaveBeenCalledOnce()
-    expect(sink.onTextChunk).toHaveBeenCalledWith('第 2 章蓝图显示作者指导为空。')
-    expect(sink.onTextChunk).not.toHaveBeenCalledWith(expect.stringContaining('"read_blueprint"'))
-  })
-
-  it.each([
-    ['unknown tool', '说明\n\n{"name":"unknown_tool","arguments":{}}'],
-    ['malformed JSON', '说明\n\n{"name":"read_blueprint","arguments":{'],
-    ['non-object arguments', '说明\n\n{"name":"read_blueprint","arguments":[] }'],
-    ['JSON followed by prose', '{"name":"read_blueprint","arguments":{}}\n补充说明'],
-    ['multiple JSON calls', '{"name":"read_blueprint","arguments":{}}\n{"name":"read_blueprint","arguments":{}}'],
-    ['JSON envelope with extra fields', '{"name":"read_blueprint","arguments":{},"comment":"run this"}'],
-    ['ordinary prose', '好的，我会读取第 2 章蓝图。'],
-  ])('does not execute %s as a trailing JSON tool call', (_label, response) => {
-    toolRegistry.register({
-      name: 'read_blueprint',
-      description: 'read one blueprint',
-      source: 'builtin',
-      inputSchema: { type: 'object', properties: {} },
-      requiresConfirmation: false,
-      isReadOnly: true,
-      execute: vi.fn(),
-    })
-
-    expect(parseToolCalls(response)).toEqual({ textParts: [response], toolCalls: [] })
-  })
-
-  it('does not treat a raw name-plus-JSON block as a command unless the whole response is the registered call', () => {
-    registerStartWorkflow()
-
-    expect(parseToolCalls(`${RAW_START_WORKFLOW}\n补充说明`)).toEqual({
-      textParts: [`${RAW_START_WORKFLOW}\n补充说明`],
-      toolCalls: [],
-    })
-    expect(parseToolCalls('unregistered_tool\n{}')).toEqual({
-      textParts: ['unregistered_tool\n{}'],
-      toolCalls: [],
-    })
-  })
-
-  it('drops DSML protocol blocks even when their payload is invalid', () => {
-    const response = '<｜DSML｜tool_call>not-json</｜DSML｜tool_call>'
-
-    expect(parseToolCalls(response)).toEqual({ textParts: [], toolCalls: [] })
-    expect(cleanAgentVisibleText(`before\n${response}\nafter`)).toBe('before\n\nafter')
   })
 })

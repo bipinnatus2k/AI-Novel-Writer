@@ -20,11 +20,11 @@ describe('Agent completion boundary', () => {
       [],
       '请整理项目',
       'model',
-      async () => requireCompleteAgentResponse({
+      async () => ({ content: requireCompleteAgentResponse({
         success: true,
         content: '<tool_call>{"name":"write_file"}</tool_call>',
         finishReason: 'length',
-      }),
+      }) }),
       callbacks,
     )
 
@@ -70,7 +70,7 @@ describe('Agent completion boundary', () => {
       onError: vi.fn(),
     }
     const generate = vi.fn()
-      .mockResolvedValueOnce('<tool_call>{"name":"budget_probe_write","arguments":{}}</tool_call>')
+      .mockResolvedValueOnce({ content: '', toolCalls: [{ name: 'budget_probe_write', args: {} }] })
       .mockRejectedValueOnce(Object.assign(new Error('agent budget exhausted'), {
         code: 'ATTEMPT_BUDGET_EXHAUSTED',
       }))

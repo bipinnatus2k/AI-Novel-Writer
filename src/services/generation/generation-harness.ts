@@ -1,5 +1,6 @@
 import type {
   LLMFinishReason,
+  LLMToolCall,
   ModelExecutionCapabilityEvidenceSource,
   ModelProfile,
   TokenUsage,
@@ -149,12 +150,18 @@ export interface PhysicalGenerationRequest {
   signal: AbortSignal
   /** Provisional provider text. Callers must reconcile it with the terminal completion. */
   onChunk?: (chunk: string) => void
+  /** Provisional reasoning deltas. Never merged into provider text. */
+  onReasoning?: (delta: string) => void
 }
 
 export interface ProviderCompletion {
   content: string
   finishReason?: LLMFinishReason
   usage?: TokenUsage
+  /** 传输层从模型文本方言中解析出的结构化工具调用（仅 agent 类请求会产生）。 */
+  toolCalls?: LLMToolCall[]
+  /** 模型推理内容（think 块 / reasoning 通道），从不与 content 混流。 */
+  reasoning?: string
 }
 
 /** The only true-external seam owned by the generation module. */
@@ -187,6 +194,10 @@ export type GenerationOutcome =
       content: string
       finishReason: 'stop'
       receipt: GenerationAttemptReceipt
+      /** 传输层解析出的结构化工具调用（仅 agent 类请求会产生）。 */
+      toolCalls?: LLMToolCall[]
+      /** 模型推理内容，从不与 content 混流。 */
+      reasoning?: string
     }
   | {
       status: 'incomplete'
@@ -199,6 +210,8 @@ export interface GenerationExecutionOptions {
   signal?: AbortSignal
   /** Provisional provider text. It is never terminal or persistence evidence. */
   onChunk?: (chunk: string) => void
+  /** Provisional reasoning deltas. It is never merged into provider text. */
+  onReasoning?: (delta: string) => void
 }
 
 export interface GenerationSessionBudget {
@@ -683,6 +696,7 @@ export function createGenerationHarness(dependencies: {
                 plan,
                 signal: controller.signal,
                 onChunk: options?.onChunk,
+                onReasoning: options?.onReasoning,
               }),
               terminationPromise,
             ])
@@ -732,6 +746,8 @@ export function createGenerationHarness(dependencies: {
               content: completion.content,
               finishReason,
               receipt,
+              ...(completion.toolCalls ? { toolCalls: completion.toolCalls } : {}),
+              ...(completion.reasoning ? { reasoning: completion.reasoning } : {}),
             }
           }
           return {

@@ -242,8 +242,8 @@ describe('Issue #90 AI assistant project actions', () => {
       '生成章节蓝图',
       'model',
       vi.fn()
-        .mockResolvedValueOnce('start_workflow\n{"workflow":"generate_blueprint"}')
-        .mockResolvedValueOnce('已停止。'),
+        .mockResolvedValueOnce({ content: '', toolCalls: [{ name: 'start_workflow', args: { workflow: 'generate_blueprint' } }] })
+        .mockResolvedValueOnce({ content: '已停止。' }),
       callbacks,
       undefined,
       createAgentExecutionContext(),
@@ -346,8 +346,8 @@ describe('Issue #90 AI assistant project actions', () => {
       onError: vi.fn(),
     }
     const generate = vi.fn()
-      .mockResolvedValueOnce('start_workflow\n{"workflow":"generate_draft","chapter_number":1}')
-      .mockResolvedValueOnce('已开始生成第一章。')
+      .mockResolvedValueOnce({ content: '', toolCalls: [{ name: 'start_workflow', args: { workflow: 'generate_draft', chapter_number: 1 } }] })
+      .mockResolvedValueOnce({ content: '已开始生成第一章。' })
 
     await runAgentLoop(
       'system',
@@ -382,8 +382,8 @@ describe('Issue #90 AI assistant project actions', () => {
       onError: vi.fn(),
     }
     const generate = vi.fn()
-      .mockResolvedValueOnce('start_workflow\n{"workflow":"generate_draft","chapter_number":1,"model_id":"untrusted-model"}')
-      .mockResolvedValueOnce('已开始生成第一章。')
+      .mockResolvedValueOnce({ content: '', toolCalls: [{ name: 'start_workflow', args: { workflow: 'generate_draft', chapter_number: 1, model_id: 'untrusted-model' } }] })
+      .mockResolvedValueOnce({ content: '已开始生成第一章。' })
 
     await runAgentLoop(
       'system',
