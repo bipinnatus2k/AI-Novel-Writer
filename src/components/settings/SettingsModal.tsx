@@ -16,7 +16,7 @@ import type {
 } from '../../shared/ipc-channels'
 import { LOW_VRAM_EMBEDDING_OPTIONS, normalizeEmbeddingOptions } from '../../shared/embedding-options'
 import type { ModelCapabilities, ProviderPreset } from '../../shared/provider-presets'
-import { BUILTIN_PRESETS } from '../../shared/provider-presets'
+import { BUILTIN_PRESETS, isLocalKeylessProvider } from '../../shared/provider-presets'
 import { createModelProfileDraft } from '../../shared/model-profile-draft'
 import type { ModelProviderResourceId } from '../../shared/model-provider-resources'
 import { randomUUID } from '../../utils/id'
@@ -676,11 +676,20 @@ function ModelForm({
             <option value="openai">OpenAI</option>
             <option value="novelai">NovelAI</option>
             <option value="deepseek">DeepSeek</option>
-            <option value="gemini">Google Gemini</option>
             <option value="xai">xAI(Grok)</option>
             <option value="siliconflow">SiliconFlow</option>
-            <option value="ollama">{text('Ollama（本地）', 'Ollama (local)')}</option>
             <option value="bigmodel">{text('BigModel（智谱）', 'BigModel (Zhipu)')}</option>
+            <option value="moonshot">{text('Moonshot（Kimi）', 'Moonshot (Kimi)')}</option>
+            <option value="qwen">{text('Qwen（通义千问）', 'Qwen (Tongyi)')}</option>
+            <option value="doubao">{text('豆包（火山方舟）', 'Doubao (Volcengine Ark)')}</option>
+            <option value="minimax">MiniMax</option>
+            <option value="hunyuan">{text('混元（腾讯）', 'Hunyuan (Tencent)')}</option>
+            <option value="gemini">Google Gemini</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="groq">Groq</option>
+            <option value="mistral">Mistral</option>
+            <option value="ollama">{text('Ollama（本地）', 'Ollama (local)')}</option>
+            <option value="lmstudio">{text('LM Studio（本地）', 'LM Studio (local)')}</option>
             <option value="custom">{text('自定义', 'Custom')}</option>
           </NativeSelect>
         </div>
@@ -775,7 +784,7 @@ function ModelForm({
             type={showKey ? 'text' : 'password'}
             value={model.apiKey}
             onChange={(e) => up('apiKey', e.target.value)}
-            placeholder={model.provider === 'ollama' ? text('本地部署可留空', 'Optional for local deployment') : 'sk-...'}
+            placeholder={model.provider === 'ollama' || model.provider === 'lmstudio' ? text('本地部署可留空', 'Optional for local deployment') : 'sk-...'}
             className="pr-9"
           />
           <button
@@ -986,7 +995,7 @@ function ModelForm({
         <Button
           variant="outline"
           onClick={handleTest}
-          disabled={testing || !model.baseUrl || (!model.apiKey && model.provider !== 'ollama')}
+          disabled={testing || !model.baseUrl || (!model.apiKey && !isLocalKeylessProvider(model.provider))}
         >
           <Zap size={13} />
           {testing ? text('测试中...', 'Testing...') : text('测试连接', 'Test connection')}
@@ -994,7 +1003,7 @@ function ModelForm({
         <Button
           className="flex-1"
           onClick={onSave}
-          disabled={saving || !model.baseUrl.trim() || !model.modelName.trim() || (!model.apiKey.trim() && model.provider !== 'ollama')}
+          disabled={saving || !model.baseUrl.trim() || !model.modelName.trim() || (!model.apiKey.trim() && !isLocalKeylessProvider(model.provider))}
         >
           <Save size={13} />
           {saving ? text('保存中...', 'Saving...') : text('保存配置', 'Save configuration')}
@@ -1405,13 +1414,22 @@ function providerIcon(provider: string) {
     case 'deepseek':
       return <Database {...commonProps} />
     case 'gemini':
+    case 'qwen':
+    case 'hunyuan':
+    case 'openrouter':
+    case 'mistral':
       return <Globe {...commonProps} />
     case 'xai':
+    case 'ollama':
+    case 'lmstudio':
       return <Cpu {...commonProps} />
     case 'siliconflow':
+    case 'doubao':
       return <Database {...commonProps} />
-    case 'ollama':
-      return <Cpu {...commonProps} />
+    case 'moonshot':
+    case 'minimax':
+    case 'groq':
+      return <Zap {...commonProps} />
     case 'bigmodel':
       return <MessageSquare {...commonProps} />
     case 'custom':

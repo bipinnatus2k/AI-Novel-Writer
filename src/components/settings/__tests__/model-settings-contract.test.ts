@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
+import { createProviderCatalog } from '../../../shared/provider-presets'
+
 function source(file: string): string {
   return readFileSync(resolve(process.cwd(), file), 'utf8')
 }
@@ -29,6 +31,18 @@ describe('model settings contract', () => {
     for (const provider of ['xai', 'siliconflow']) {
       expect(settingsModal).toContain(`value="${provider}"`)
       expect(modelSettings).toContain(`value="${provider}"`)
+    }
+  })
+
+  it('offers every built-in provider preset in both settings surfaces', () => {
+    const settingsModal = source('src/components/settings/SettingsModal.tsx')
+    const modelSettings = source('src/components/settings/ModelSettings.tsx')
+
+    for (const preset of createProviderCatalog()) {
+      expect(settingsModal, `SettingsModal is missing provider option: ${preset.provider}`)
+        .toContain(`value="${preset.provider}"`)
+      expect(modelSettings, `ModelSettings is missing provider option: ${preset.provider}`)
+        .toContain(`value="${preset.provider}"`)
     }
   })
 

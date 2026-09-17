@@ -664,7 +664,7 @@ export interface TokenUsage {
 export interface ModelProfile {
   id: string
   name: string
-  provider: 'openai' | 'gemini' | 'deepseek' | 'ollama' | 'bigmodel' | 'novelai' | 'xai' | 'siliconflow' | 'custom'
+  provider: 'openai' | 'gemini' | 'deepseek' | 'ollama' | 'bigmodel' | 'novelai' | 'xai' | 'siliconflow' | 'moonshot' | 'qwen' | 'doubao' | 'minimax' | 'hunyuan' | 'openrouter' | 'groq' | 'mistral' | 'lmstudio' | 'custom'
   protocol: 'openai' | 'gemini'
   modelName: string
   apiKey: string

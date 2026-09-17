@@ -41,6 +41,8 @@ export interface ProviderPreset {
   provider: string
   /** 界面显示名称，缺省时使用 provider ID */
   displayName?: string
+  /** 英文界面显示名称；缺省时使用 displayName */
+  displayNameEn?: string
   /** 默认 API 地址 */
   baseUrl: string
   /** 默认调用协议：openai 兼容 或 gemini 原生 */
@@ -63,6 +65,7 @@ export function createProviderCatalog(): ProviderPreset[] {
   {
     provider: 'openai',
     displayName: 'OpenAI',
+    displayNameEn: 'OpenAI',
     baseUrl: 'https://api.openai.com',
     protocol: 'openai',
     models: [
@@ -76,6 +79,7 @@ export function createProviderCatalog(): ProviderPreset[] {
   {
     provider: 'xai',
     displayName: 'xAI(Grok)',
+    displayNameEn: 'xAI (Grok)',
     baseUrl: 'https://api.x.ai/v1',
     protocol: 'openai',
     models: [
@@ -104,6 +108,7 @@ export function createProviderCatalog(): ProviderPreset[] {
   {
     provider: 'siliconflow',
     displayName: 'SiliconFlow',
+    displayNameEn: 'SiliconFlow',
     baseUrl: 'https://api.siliconflow.cn/v1',
     protocol: 'openai',
     models: [],
@@ -121,6 +126,7 @@ export function createProviderCatalog(): ProviderPreset[] {
   {
     provider: 'novelai',
     displayName: 'NovelAI',
+    displayNameEn: 'NovelAI',
     baseUrl: 'https://text.novelai.net/oa',
     protocol: 'openai',
     models: [],
@@ -129,6 +135,7 @@ export function createProviderCatalog(): ProviderPreset[] {
   {
     provider: 'deepseek',
     displayName: 'DeepSeek',
+    displayNameEn: 'DeepSeek',
     baseUrl: 'https://api.deepseek.com',
     protocol: 'openai',
     models: [
@@ -175,6 +182,7 @@ export function createProviderCatalog(): ProviderPreset[] {
     /** 智谱 BigModel — OpenAI 兼容协议，API 路径为 /v4 */
     provider: 'bigmodel',
     displayName: 'BigModel（智谱）',
+    displayNameEn: 'BigModel (Zhipu)',
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     protocol: 'openai',
     models: [
@@ -189,8 +197,96 @@ export function createProviderCatalog(): ProviderPreset[] {
     embeddingModels: ['embedding-3'],
   },
   {
+    /** Moonshot AI（Kimi）— OpenAI 兼容协议；官方 K2.5+ 模型的采样参数由生成参数策略处理 */
+    provider: 'moonshot',
+    displayName: 'Moonshot（Kimi）',
+    displayNameEn: 'Moonshot (Kimi)',
+    baseUrl: 'https://api.moonshot.cn/v1',
+    protocol: 'openai',
+    models: [
+      { name: 'kimi-k3', maxTokens: 8192 },
+      { name: 'kimi-k2.7', maxTokens: 8192 },
+    ],
+    embeddingModels: [],
+  },
+  {
+    /** 阿里云通义千问 — DashScope OpenAI 兼容模式 */
+    provider: 'qwen',
+    displayName: 'Qwen（通义千问）',
+    displayNameEn: 'Qwen (Tongyi)',
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    protocol: 'openai',
+    models: [
+      { name: 'qwen-max', maxTokens: 8192 },
+      { name: 'qwen-plus', maxTokens: 8192 },
+      { name: 'qwen-flash', maxTokens: 8192 },
+    ],
+    embeddingModels: ['text-embedding-v4'],
+  },
+  {
+    /** 字节火山方舟（豆包）— OpenAI 兼容协议；模型 ID 与推理接入点绑定，走发现接口或手填 */
+    provider: 'doubao',
+    displayName: '豆包（火山方舟）',
+    displayNameEn: 'Doubao (Volcengine Ark)',
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    protocol: 'openai',
+    models: [],
+    embeddingModels: [],
+  },
+  {
+    provider: 'minimax',
+    displayName: 'MiniMax',
+    displayNameEn: 'MiniMax',
+    baseUrl: 'https://api.minimaxi.com/v1',
+    protocol: 'openai',
+    models: [],
+    embeddingModels: [],
+  },
+  {
+    provider: 'hunyuan',
+    displayName: '混元（腾讯）',
+    displayNameEn: 'Hunyuan (Tencent)',
+    baseUrl: 'https://api.hunyuan.cloud.tencent.com/v1',
+    protocol: 'openai',
+    models: [
+      { name: 'hunyuan-turbos-latest', maxTokens: 8192 },
+    ],
+    embeddingModels: [],
+  },
+  {
+    /** OpenRouter — 聚合网关，模型列表走发现接口 */
+    provider: 'openrouter',
+    displayName: 'OpenRouter',
+    displayNameEn: 'OpenRouter',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    protocol: 'openai',
+    models: [],
+    embeddingModels: [],
+  },
+  {
+    provider: 'groq',
+    displayName: 'Groq',
+    displayNameEn: 'Groq',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    protocol: 'openai',
+    models: [],
+    embeddingModels: [],
+  },
+  {
+    provider: 'mistral',
+    displayName: 'Mistral',
+    displayNameEn: 'Mistral',
+    baseUrl: 'https://api.mistral.ai/v1',
+    protocol: 'openai',
+    models: [
+      { name: 'mistral-large-latest', maxTokens: 8192 },
+    ],
+    embeddingModels: ['mistral-embed'],
+  },
+  {
     provider: 'gemini',
     displayName: 'Google Gemini',
+    displayNameEn: 'Google Gemini',
     baseUrl: 'https://generativelanguage.googleapis.com',
     protocol: 'gemini',
     models: [
@@ -219,6 +315,7 @@ export function createProviderCatalog(): ProviderPreset[] {
   {
     provider: 'ollama',
     displayName: 'Ollama（本地）',
+    displayNameEn: 'Ollama (local)',
     baseUrl: 'http://localhost:11434/v1',
     protocol: 'openai',
     models: [
@@ -234,8 +331,19 @@ export function createProviderCatalog(): ProviderPreset[] {
     embeddingModels: ['nomic-embed-text', 'mxbai-embed-large', 'bge-m3'],
   },
   {
+    /** LM Studio 本地服务 — OpenAI 兼容协议，默认端口 1234 */
+    provider: 'lmstudio',
+    displayName: 'LM Studio（本地）',
+    displayNameEn: 'LM Studio (local)',
+    baseUrl: 'http://localhost:1234/v1',
+    protocol: 'openai',
+    models: [],
+    embeddingModels: [],
+  },
+  {
     provider: 'custom',
     displayName: '自定义',
+    displayNameEn: 'Custom',
     baseUrl: '',
     protocol: 'openai',
     models: [],
@@ -246,6 +354,13 @@ export function createProviderCatalog(): ProviderPreset[] {
 
 /** 内置默认预设（首次启动时写入持久化文件） */
 export const BUILTIN_PRESETS: ProviderPreset[] = createProviderCatalog()
+
+/** 无需 API Key 的本地服务商；设置界面的连接测试与保存据此豁免密钥校验。 */
+export const LOCAL_KEYLESS_PROVIDERS: ReadonlySet<string> = new Set(['ollama', 'lmstudio'])
+
+export function isLocalKeylessProvider(provider: string): boolean {
+  return LOCAL_KEYLESS_PROVIDERS.has(provider)
+}
 
 function normalizedOfficialBaseUrl(value: unknown): string | null {
   if (typeof value !== 'string') return null
