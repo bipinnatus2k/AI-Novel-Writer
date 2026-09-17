@@ -264,6 +264,7 @@ describe('llm generation parameter policy controller integration', () => {
         temperature: 1,
         maxTokens: 512,
         responseFormat: { type: 'json_object' },
+        reasoning: { adapter: 'openai-reasoning-effort', reasoningEffort: 'low' },
       },
     )
 

@@ -24,7 +24,6 @@ const THINK_CLOSE = '</think>'
 
 const DSML_DOUBLE_OPEN = '<｜｜DSML｜｜'
 const DSML_CALLS_CLOSE = '</｜｜DSML｜｜ calls>'
-const DSML_INVOKE_CLOSE = '</｜｜DSML｜｜ invoke>'
 
 /** 单闭合标签的方言（opener → closer）。 */
 const TAGGED_OPENERS: ReadonlyArray<readonly [opener: string, closer: string]> = [
@@ -138,16 +137,30 @@ export class ProtocolSegmenter {
   }
 
   /** 双竖线区域：解析缓冲内全部已闭合 invoke，返回「协议区是否已终结」。 */
-  private drainDsmlDouble(final: boolean): boolean {
-    // 只解析自上次游标之后新闭合的 invoke，避免同一块被重复收集
-    const lastClose = this.buffer.lastIndexOf(DSML_INVOKE_CLOSE)
-    if (lastClose >= this.dsmlParsedUpTo && lastClose >= 0) {
-      const region = this.buffer.slice(this.dsmlParsedUpTo, lastClose + DSML_INVOKE_CLOSE.length)
+  private drainDsmlDouble(final: boolean, result: SegmentedDelta): boolean {
+    // 容忍空格差异：扫描全部闭合标签，跟踪最后一个 invoke 闭合的位置
+    // （跳过 parameter/calls 等内层闭合）
+    const closeBase = '</｜｜DSML｜｜'
+    let search = this.dsmlParsedUpTo
+    let lastInvokeEnd = this.dsmlParsedUpTo
+    for (;;) {
+      const base = this.buffer.indexOf(closeBase, search)
+      if (base < 0) break
+      const tagEnd = this.buffer.indexOf('>', base)
+      if (tagEnd < 0) break
+      const inner = this.buffer.slice(base + closeBase.length, tagEnd).trim()
+      if (inner === 'invoke') {
+        lastInvokeEnd = tagEnd + 1
+      }
+      search = tagEnd + 1
+    }
+    if (lastInvokeEnd > this.dsmlParsedUpTo) {
+      const region = this.buffer.slice(this.dsmlParsedUpTo, lastInvokeEnd)
       this.collectedToolCalls.push(...parseDoubleBarDsmlBlocks(region))
-      this.dsmlParsedUpTo = lastClose + DSML_INVOKE_CLOSE.length
+      this.dsmlParsedUpTo = lastInvokeEnd
     }
 
-    // calls 包裹的闭合标签出现 → 协议区结束
+    // calls 包裹的闭合已完整到达 → 协议区终结
     const callsCloseIndex = this.buffer.indexOf(DSML_CALLS_CLOSE, this.dsmlParsedUpTo)
     if (callsCloseIndex >= 0) {
       this.buffer = this.buffer.slice(callsCloseIndex + DSML_CALLS_CLOSE.length)
@@ -157,11 +170,9 @@ export class ProtocolSegmenter {
     }
 
     if (!final) {
-      // 尚无完整 invoke：整块继续缓冲（防截断，块都很短）
-      if (lastClose < this.dsmlParsedUpTo) return false
       const tail = this.buffer.slice(this.dsmlParsedUpTo).trimStart()
       if (tail === '') return false
-      if (tail.startsWith(DSML_DOUBLE_OPEN) || tail.startsWith(DSML_CALLS_CLOSE)) return false
+      if (tail.startsWith(DSML_DOUBLE_OPEN) || tail.startsWith(DSML_CALLS_CLOSE) || DSML_CALLS_CLOSE.startsWith(tail)) return false
       // invoke 之后已是正文：退出协议区，剩余交回 text 模式
       this.buffer = this.buffer.slice(this.dsmlParsedUpTo)
       this.dsmlParsedUpTo = 0
@@ -169,22 +180,16 @@ export class ProtocolSegmenter {
       return false
     }
 
-    // 流结束：残尾含协议 opener 的按残渣丢弃；否则作为正文外发
-    if (this.dsmlParsedUpTo < this.buffer.length) {
-      const tail = this.buffer.slice(this.dsmlParsedUpTo)
-      if (!tail.includes(DSML_DOUBLE_OPEN)) {
-        this.buffer = tail
-        this.dsmlParsedUpTo = 0
-          this.mode = 'text'
-        return false
-      }
-    }
+    // 流结束：残尾非协议文本外发为正文；协议残渣丢弃
+    this.collectedToolCalls.push(...parseDoubleBarDsmlBlocks(this.buffer.slice(this.dsmlParsedUpTo)))
+    const lastInvoke = this.buffer.lastIndexOf('</｜｜DSML｜｜ invoke>')
+    const trailing = lastInvoke >= 0 ? this.buffer.slice(lastInvoke + '</｜｜DSML｜｜ invoke>'.length) : ''
+    if (trailing.trim()) this.emit(result, undefined, trailing)
     this.buffer = ''
     this.dsmlParsedUpTo = 0
     this.mode = 'text'
     return true
   }
-
   private drain(final: boolean): SegmentedDelta {
     const result: SegmentedDelta = {}
 
@@ -231,7 +236,7 @@ export class ProtocolSegmenter {
       }
 
       if (this.mode === 'dsml-double') {
-        const exited = this.drainDsmlDouble(final)
+        const exited = this.drainDsmlDouble(final, result)
         if (!exited) return result
         continue
       }

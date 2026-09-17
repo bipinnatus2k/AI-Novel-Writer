@@ -101,20 +101,24 @@ function collectInvokeParameters(body: string): { args: Record<string, unknown> 
 
 /** 解析双全角竖线的属性式 DSML 文本（calls 包裹或裸 invoke 均可）。 */
 export function parseDoubleBarDsmlBlocks(text: string): LLMToolCall[] {
+  // 空格容错：'<｜｜DSML｜｜invoke>' 与 '<｜｜DSML｜｜ invoke>' 等价（含 closers）
+  const normalized = text
+    .replace(/<｜｜DSML｜｜\s*/g, '<｜｜DSML｜｜ ')
+    .replace(/<\/｜｜DSML｜｜\s*/g, '</｜｜DSML｜｜ ')
   const toolCalls: LLMToolCall[] = []
   let cursor = 0
 
   for (;;) {
-    const start = text.indexOf(INVOKE_OPEN, cursor)
+    const start = normalized.indexOf(INVOKE_OPEN, cursor)
     if (start < 0) break
-    const name = readNameAttribute(text, start)
+    const name = readNameAttribute(normalized, start)
     if (!name) break
     const bodyStart = name.tagEnd + 1
-    const end = text.indexOf(INVOKE_CLOSE, bodyStart)
+    const end = normalized.indexOf(INVOKE_CLOSE, bodyStart)
     if (end < 0) break
     const name2 = sanitizeToken(name.name)
     if (name2) {
-      const { args } = collectInvokeParameters(text.slice(bodyStart, end))
+      const { args } = collectInvokeParameters(normalized.slice(bodyStart, end))
       if (args) toolCalls.push(makeToolCall(name2, args))
     }
     cursor = end + INVOKE_CLOSE.length
