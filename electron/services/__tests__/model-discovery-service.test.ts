@@ -127,6 +127,50 @@ describe('ModelDiscoveryService', () => {
     expect(JSON.stringify(result)).not.toContain(credential)
   })
 
+  it('uses the Anthropic /v1/models form with its own auth headers', async () => {
+    const credential = crypto.randomUUID()
+    let requestUrl = ''
+    let xApiKey = ''
+    let anthropicVersion = ''
+    let authorization = ''
+    const baseUrl = await listen(createServer((request, response) => {
+      requestUrl = request.url ?? ''
+      xApiKey = String(request.headers['x-api-key'] ?? '')
+      anthropicVersion = String(request.headers['anthropic-version'] ?? '')
+      authorization = String(request.headers.authorization ?? '')
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end(JSON.stringify({
+        data: [
+          { id: 'claude-sonnet-4-5', display_name: 'Claude Sonnet 4.5' },
+          { id: 'claude-haiku-4-5' },
+        ],
+      }))
+    }))
+    const saved = profile({
+      id: 'saved-anthropic',
+      provider: 'anthropic',
+      protocol: 'anthropic',
+      apiKey: credential,
+      baseUrl,
+    })
+
+    const result = await new ModelDiscoveryService().discoverModels(saved)
+
+    expect(requestUrl).toBe('/v1/models')
+    expect(requestUrl).not.toContain(credential)
+    expect(xApiKey).toBe(credential)
+    expect(anthropicVersion).toBeTruthy()
+    expect(authorization).toBe('')
+    expect(result).toEqual({
+      success: true,
+      models: [
+        { id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5', value: 'claude-sonnet-4-5' },
+        { id: 'claude-haiku-4-5', name: 'claude-haiku-4-5', value: 'claude-haiku-4-5' },
+      ],
+    })
+    expect(JSON.stringify(result)).not.toContain(credential)
+  })
+
   it.each([
     { protocol: 'openai' as const, provider: 'custom' as const },
     { protocol: 'gemini' as const, provider: 'gemini' as const },

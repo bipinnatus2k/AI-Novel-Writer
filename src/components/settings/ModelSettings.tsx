@@ -198,6 +198,7 @@ function ModelForm({
             <option value="minimax">MiniMax</option>
             <option value="hunyuan">{text('混元（腾讯）', 'Hunyuan (Tencent)')}</option>
             <option value="gemini">Google Gemini</option>
+            <option value="anthropic">Anthropic(Claude)</option>
             <option value="openrouter">OpenRouter</option>
             <option value="groq">Groq</option>
             <option value="mistral">Mistral</option>
@@ -211,6 +212,7 @@ function ModelForm({
           <NativeSelect value={model.protocol} onChange={(e) => update('protocol', e.target.value as ModelProfile['protocol'])}>
             <option value="openai">{text('OpenAI 兼容', 'OpenAI compatible')}</option>
             <option value="gemini">Gemini</option>
+            <option value="anthropic">Anthropic</option>
           </NativeSelect>
         </div>
       </div>

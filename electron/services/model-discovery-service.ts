@@ -60,6 +60,24 @@ function resolveGeminiModelsUrl(baseUrl: string): string {
   return endpoint.toString()
 }
 
+function resolveAnthropicModelsUrl(baseUrl: string): string {
+  const endpoint = new URL(baseUrl.trim())
+  const configuredPath = endpoint.pathname.replace(/\/+$/u, '')
+
+  if (configuredPath.endsWith('/v1/models')) {
+    endpoint.pathname = configuredPath
+  } else if (configuredPath.endsWith('/v1')) {
+    endpoint.pathname = `${configuredPath}/models`
+  } else {
+    endpoint.pathname = `${configuredPath}/v1/models`
+  }
+  endpoint.search = ''
+  endpoint.hash = ''
+  endpoint.username = ''
+  endpoint.password = ''
+  return endpoint.toString()
+}
+
 function safeProviderText(value: unknown, credential: string): string | null {
   if (typeof value !== 'string') return null
   if (Buffer.byteLength(value, 'utf8') > MAX_DISCOVERED_MODEL_TEXT_BYTES) return null
@@ -102,7 +120,9 @@ function parseOpenAIModels(payload: unknown, credential: string): DiscoveredMode
     if (!item || typeof item !== 'object') return null
     const id = safeProviderText((item as { id?: unknown }).id, credential)
     if (!id) return null
+    // Anthropic 的列表项用 display_name，OpenAI 用 name；两者缺省时回退到 id。
     const providerName = (item as { name?: unknown }).name
+      ?? (item as { display_name?: unknown }).display_name
     const name = providerName === undefined ? id : safeProviderText(providerName, credential)
     if (!name) return null
     if (seenValues.has(id)) continue
@@ -153,6 +173,42 @@ export class ModelDiscoveryService {
     const timeout = setTimeout(() => abortController.abort(), timeoutMs)
 
     try {
+      if (model.protocol === 'anthropic') {
+        // Anthropic /v1/models 响应形状（data[].id）与 OpenAI 解析器兼容，
+        // 差异仅在鉴权头（x-api-key + anthropic-version）。
+        const requestUrl = resolveAnthropicModelsUrl(model.baseUrl)
+        if (urlContainsCredential(requestUrl, model.apiKey)) {
+          return { success: false, errorCode: 'invalid_response' }
+        }
+        const response = await (this.dependencies.fetchImpl ?? fetch)(
+          requestUrl,
+          {
+            method: 'GET',
+            redirect: 'error',
+            signal: abortController.signal,
+            headers: {
+              Accept: 'application/json',
+              'x-api-key': model.apiKey,
+              'anthropic-version': '2023-06-01',
+            },
+          },
+        )
+        if (!response.ok) return classifyHttpFailure(response.status)
+
+        let payload: unknown
+        try {
+          payload = await response.json()
+        } catch {
+          return abortController.signal.aborted
+            ? { success: false, errorCode: 'network' }
+            : { success: false, errorCode: 'invalid_response' }
+        }
+        const models = parseOpenAIModels(payload, model.apiKey)
+        if (!models) return { success: false, errorCode: 'invalid_response' }
+        if (models.length === 0) return { success: false, errorCode: 'empty' }
+        return { success: true, models }
+      }
+
       if (model.protocol === 'gemini') {
         const requestUrl = resolveGeminiModelsUrl(model.baseUrl)
         if (urlContainsCredential(requestUrl, model.apiKey)) {

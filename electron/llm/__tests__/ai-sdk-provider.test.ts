@@ -400,3 +400,100 @@ describe('AiSdkProvider structured output requests', () => {
     expect(requests[0].body.response_format).toEqual({ type: 'json_object' })
   })
 })
+
+describe('AiSdkProvider anthropic protocol', () => {
+  const anthropicModel: ModelProfile = {
+    ...novelAIModel,
+    provider: 'anthropic',
+    protocol: 'anthropic',
+    baseUrl: 'https://api.anthropic.com',
+    maxTokens: 64_000,
+  }
+
+  it('sends the Messages API request with anthropic auth headers for non-stream generation', async () => {
+    const { requests } = installFetchMock(() => jsonBodyResponse({
+      id: 'msg_1',
+      type: 'message',
+      role: 'assistant',
+      model: 'claude-sonnet-4-5',
+      content: [{ type: 'text', text: '正文' }],
+      stop_reason: 'end_turn',
+      stop_sequence: null,
+      usage: { input_tokens: 9, output_tokens: 2 },
+    }))
+    const provider = new AiSdkProvider()
+
+    const response = await provider.generate(anthropicModel, [
+      { role: 'system', content: '你是写作助手' },
+      { role: 'user', content: '继续写' },
+    ], {
+      temperature: 0.7,
+      maxTokens: 64_000,
+    })
+
+    expect(response.success).toBe(true)
+    expect(response.content).toBe('正文')
+    expect(response.finishReason).toBe('stop')
+    expect(response.usage).toEqual({ promptTokens: 9, completionTokens: 2, totalTokens: 11 })
+
+    const request = requests[0]
+    expect(request.url).toBe('https://api.anthropic.com/v1/messages')
+    expect(request.headers['x-api-key']).toBe(TEST_API_KEY)
+    expect(request.headers['anthropic-version']).toBeTruthy()
+    expect(request.body.max_tokens).toBe(64_000)
+    // system 消息由 AI SDK 转成顶层 system 内容块，消息体也是内容块数组
+    expect(request.body.system).toEqual([{ type: 'text', text: '你是写作助手' }])
+    expect(request.body.messages).toEqual([
+      { role: 'user', content: [{ type: 'text', text: '继续写' }] },
+    ])
+  })
+
+  it('keeps an explicitly configured /v1 relay path without doubling the suffix', async () => {
+    const relayModel: ModelProfile = {
+      ...anthropicModel,
+      provider: 'custom',
+      baseUrl: 'https://relay.example.com/anthropic/v1',
+    }
+    const { requests } = installFetchMock(() => jsonBodyResponse({
+      id: 'msg_2',
+      type: 'message',
+      role: 'assistant',
+      model: 'claude-sonnet-4-5',
+      content: [{ type: 'text', text: '中转' }],
+      stop_reason: 'end_turn',
+      stop_sequence: null,
+      usage: { input_tokens: 1, output_tokens: 1 },
+    }))
+    const provider = new AiSdkProvider()
+
+    await provider.generate(relayModel, [{ role: 'user', content: '继续写' }], {
+      temperature: 0.7,
+      maxTokens: 4096,
+    })
+
+    expect(requests[0].url).toBe('https://relay.example.com/anthropic/v1/messages')
+  })
+
+  it('maps the max_tokens stop reason to the length finish', async () => {
+    installFetchMock(() => jsonBodyResponse({
+      id: 'msg_3',
+      type: 'message',
+      role: 'assistant',
+      model: 'claude-sonnet-4-5',
+      content: [{ type: 'text', text: '截断' }],
+      stop_reason: 'max_tokens',
+      stop_sequence: null,
+      usage: { input_tokens: 1, output_tokens: 2 },
+    }))
+    const provider = new AiSdkProvider()
+
+    const response = await provider.generate(anthropicModel, [{ role: 'user', content: '继续写' }], {
+      temperature: 0.7,
+      maxTokens: 16,
+    })
+
+    expect(response.success).toBe(false)
+    expect(response.finishReason).toBe('length')
+    expect(response.content).toBe('截断')
+  })
+})

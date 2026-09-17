@@ -1,5 +1,6 @@
 import { generateText, streamText } from 'ai'
 import type { LanguageModel, LanguageModelUsage, ModelMessage } from 'ai'
+import { createAnthropic } from '@ai-sdk/anthropic'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import type { ILLMProvider, LLMGenerateOptions, LLMResponse, LLMStreamOptions } from '../provider.interface'
@@ -8,6 +9,7 @@ import type { ModelProfile } from '../../../src/shared/ipc-channels'
 import {
   buildModelContext,
   createGeminiQuirkFetch,
+  toAnthropicBaseUrl,
   toCompatibleBaseUrl,
   toGeminiBaseUrl,
   transformOpenAiRequestBody,
@@ -65,6 +67,13 @@ function splitInstructions(
 }
 
 function buildLanguageModel(model: ModelProfile, context: ModelContext): LanguageModel {
+  if (model.protocol === 'anthropic') {
+    const anthropic = createAnthropic({
+      apiKey: model.apiKey,
+      baseURL: toAnthropicBaseUrl(model.baseUrl),
+    })
+    return anthropic.languageModel(model.modelName)
+  }
   if (model.protocol === 'gemini') {
     const google = createGoogleGenerativeAI({
       apiKey: model.apiKey,

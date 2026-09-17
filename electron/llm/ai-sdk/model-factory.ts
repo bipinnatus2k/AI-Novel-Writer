@@ -42,6 +42,13 @@ export function toGeminiBaseUrl(baseUrl: string): string {
   return `${baseUrl.replace(/\/+$/u, '')}/v1beta`
 }
 
+/** Anthropic Messages API lives under `/v1`; relays that already expose the
+ * versioned prefix keep their configured path. */
+export function toAnthropicBaseUrl(baseUrl: string): string {
+  const trimmed = baseUrl.trim().replace(/\/+$/u, '')
+  return trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`
+}
+
 /** Reproduces the legacy chat-completions endpoint exactly: the authoritative
  * resolver decides the full path, then we strip the suffix the AI SDK appends. */
 export function toCompatibleBaseUrl(model: ModelProfile): string {

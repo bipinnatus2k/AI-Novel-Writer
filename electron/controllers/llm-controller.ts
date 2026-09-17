@@ -372,8 +372,13 @@ export function registerLLMController() {
       
       let result = { success: true, error: undefined as undefined | string }
       if (model.purposes?.includes('embedding')) {
-        const { generateEmbeddings } = await import('../embedding')
-        await generateEmbeddings(['hello'], model.protocol, model)
+        if (model.protocol === 'anthropic') {
+          // Anthropic 不提供向量接口；向量模型必须选择 openai/gemini 协议端点。
+          result = { success: false, error: 'Anthropic 不提供向量模型接口，无法用于向量用途。' }
+        } else {
+          const { generateEmbeddings } = await import('../embedding')
+          await generateEmbeddings(['hello'], model.protocol, model)
+        }
       } else {
         const res = await provider.generate(
           model,

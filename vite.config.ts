@@ -35,6 +35,7 @@ export default defineConfig({
               '@lancedb/lancedb',
               'yauzl',
               'ai',
+              '@ai-sdk/anthropic',
               '@ai-sdk/google',
               '@ai-sdk/openai-compatible'
             ]

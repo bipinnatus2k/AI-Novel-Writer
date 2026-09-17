@@ -685,6 +685,7 @@ function ModelForm({
             <option value="minimax">MiniMax</option>
             <option value="hunyuan">{text('混元（腾讯）', 'Hunyuan (Tencent)')}</option>
             <option value="gemini">Google Gemini</option>
+            <option value="anthropic">Anthropic(Claude)</option>
             <option value="openrouter">OpenRouter</option>
             <option value="groq">Groq</option>
             <option value="mistral">Mistral</option>
@@ -701,6 +702,7 @@ function ModelForm({
           >
             <option value="openai">OpenAI</option>
             <option value="gemini">Gemini</option>
+            <option value="anthropic">Anthropic</option>
           </NativeSelect>
         </div>
       </div>
@@ -1410,6 +1412,8 @@ function providerIcon(provider: string) {
     case 'openai':
       return <Zap {...commonProps} />
     case 'novelai':
+    case 'bigmodel':
+    case 'anthropic':
       return <MessageSquare {...commonProps} />
     case 'deepseek':
       return <Database {...commonProps} />
@@ -1430,8 +1434,6 @@ function providerIcon(provider: string) {
     case 'minimax':
     case 'groq':
       return <Zap {...commonProps} />
-    case 'bigmodel':
-      return <MessageSquare {...commonProps} />
     case 'custom':
       return <Settings2 {...commonProps} />
     default:

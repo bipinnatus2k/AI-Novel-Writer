@@ -313,6 +313,20 @@ export function createProviderCatalog(): ProviderPreset[] {
     embeddingModels: ['text-embedding-004'],
   },
   {
+    /** Anthropic 官方 Messages API — 传输层协议 anthropic；无向量模型 */
+    provider: 'anthropic',
+    displayName: 'Anthropic(Claude)',
+    displayNameEn: 'Anthropic (Claude)',
+    baseUrl: 'https://api.anthropic.com',
+    protocol: 'anthropic',
+    models: [
+      { name: 'claude-sonnet-4-5', maxTokens: 64_000 },
+      { name: 'claude-haiku-4-5', maxTokens: 64_000 },
+      { name: 'claude-opus-4-1', maxTokens: 32_000 },
+    ],
+    embeddingModels: [],
+  },
+  {
     provider: 'ollama',
     displayName: 'Ollama（本地）',
     displayNameEn: 'Ollama (local)',
