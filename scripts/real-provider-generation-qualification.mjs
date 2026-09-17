@@ -767,6 +767,13 @@ async function loadProductRuntime(repositoryRoot) {
       format: 'esm',
       platform: 'node',
       target: 'node20',
+      // data: URL 模块没有包解析能力，也不存在 require。被内联的 CJS 依赖
+      // （如 @vercel/oidc → require('path')）需要由 banner 注入一个绑定到
+      // 仓库根的 createRequire，esbuild 的 __require shim 才能落地。
+      banner: {
+        js: `import { createRequire as __qualificationCreateRequire } from 'node:module';` +
+          `const require = __qualificationCreateRequire(${JSON.stringify(pathToFileURL(path.join(resolvedRoot, 'package.json')).href)});`,
+      },
       write: false,
       logLevel: 'silent',
     })

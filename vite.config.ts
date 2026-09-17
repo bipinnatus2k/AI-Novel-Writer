@@ -25,12 +25,19 @@ export default defineConfig({
       entry: 'electron/main.ts',
       vite: {
         build: {
-          // 强制输出 CommonJS，保证 better-sqlite3 等 native 模块能正常加载
+          // 注意：vite-plugin-electron 实际按 ESM 输出（package.json 为
+          // "type": "module"，Electron 以 ESM 加载 main）。原生模块与 AI SDK
+          // 必须外部化：内联 CJS 依赖（如 @vercel/oidc）会被 rolldown 包上
+          // 运行时必炸的 __require shim；外部化后由 Node 原生模块解析加载。
           rollupOptions: {
-            external: ['better-sqlite3', '@lancedb/lancedb', 'yauzl'],
-            output: {
-              format: 'cjs'
-            }
+            external: [
+              'better-sqlite3',
+              '@lancedb/lancedb',
+              'yauzl',
+              'ai',
+              '@ai-sdk/google',
+              '@ai-sdk/openai-compatible'
+            ]
           }
         }
       }

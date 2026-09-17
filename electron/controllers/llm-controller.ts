@@ -165,7 +165,7 @@ export function registerLLMController() {
         : getModelConfig(request.modelId)
       if (!model) return { success: false, content: '', finishReason: 'error', error: '未找到模型配置' }
 
-      const provider = LLMFactory.getProvider(model)
+      const provider = LLMFactory.getProvider()
       const result = await provider.generate(
         model,
         request.messages,
@@ -206,7 +206,7 @@ export function registerLLMController() {
     })
     const win = BrowserWindow.fromWebContents(event.sender)
 
-    const provider = LLMFactory.getProvider(model)
+    const provider = LLMFactory.getProvider()
     
     // We do not await this globally since it's streaming independently
     provider.generateStream(model, request.messages, {
@@ -368,7 +368,7 @@ export function registerLLMController() {
       applyProxyConfig()
       
       const messages = [{ role: 'user', content: 'Say "hello" and nothing else.' }]
-      const provider = LLMFactory.getProvider(model)
+      const provider = LLMFactory.getProvider()
       
       let result = { success: true, error: undefined as undefined | string }
       if (model.purposes?.includes('embedding')) {
