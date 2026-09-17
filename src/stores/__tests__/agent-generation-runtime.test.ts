@@ -23,10 +23,11 @@ vi.mock('../../services/generation/generation-runtime', async importOriginal => 
   createGenerationRuntime: generationRuntime.create,
 }))
 
-function completed(content: string, attempt: number) {
+function completed(content: string, attempt: number, extra?: { toolCalls?: Array<{ name: string; args: Record<string, unknown> }> }) {
   return {
     status: 'completed' as const,
     content,
+    ...(extra ?? {}),
     finishReason: 'stop' as const,
     receipt: {
       model: { id: 'model-a', configurationRevision: 'r1', endpointFingerprint: 'f1' },
@@ -82,7 +83,7 @@ describe('Agent GenerationRuntime boundary', () => {
     const complete = vi.fn<GenerationSession['complete']>()
       .mockImplementationOnce(async () => {
         useLLMStore.setState({ defaultModelId: 'model-b' })
-        return completed('<tool_call>{"name":"missing_probe","arguments":{}}</tool_call>', 1)
+        return completed('', 1, { toolCalls: [{ name: 'missing_probe', args: {} }] })
       })
       .mockResolvedValueOnce(completed('最终回复', 2))
     const close = vi.fn(async () => {})

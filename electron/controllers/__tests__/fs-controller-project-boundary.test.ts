@@ -387,8 +387,8 @@ describe('Agent write_file commit result integration', () => {
     const target = path.join(projectAPath, 'agent-output.md')
     const writeSpy = vi.spyOn(testFileSystem, 'writeTextAtomically')
     const generate = vi.fn()
-      .mockResolvedValueOnce('<tool_call>{"name":"write_file","arguments":{"file_path":"agent-output.md","content":"committed once"}}</tool_call>')
-      .mockResolvedValueOnce('done')
+      .mockResolvedValueOnce({ content: '', toolCalls: [{ name: 'write_file', args: { file_path: 'agent-output.md', content: 'committed once' } }] })
+      .mockResolvedValueOnce({ content: 'done' })
 
     await runAgentLoop(
       'system', [], 'write', 'model', generate, callbacks, undefined,
@@ -412,7 +412,7 @@ describe('Agent write_file commit result integration', () => {
       { commitState: 'unknown' as const },
     ))
     const generate = vi.fn()
-      .mockResolvedValue('<tool_call>{"name":"write_file","arguments":{"file_path":"agent-unknown.md","content":"maybe"}}</tool_call>')
+      .mockResolvedValue({ content: '', toolCalls: [{ name: 'write_file', args: { file_path: 'agent-unknown.md', content: 'maybe' } }] })
 
     await runAgentLoop(
       'system', [], 'write', 'model', generate, callbacks, undefined,

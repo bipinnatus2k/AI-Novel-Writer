@@ -45,7 +45,7 @@ describe('LLM stream completion propagation', () => {
     expect(doneListener).toBeTypeOf('function')
     doneListener?.({ requestId, fullText: '半截正文', finishReason: 'length' })
 
-    expect(onDone).toHaveBeenCalledWith('半截正文', undefined, 'length')
+    expect(onDone).toHaveBeenCalledWith('半截正文', undefined, 'length', undefined)
   })
 
   it('fails an older IPC peer without a finish reason closed as unknown', async () => {
@@ -58,7 +58,7 @@ describe('LLM stream completion propagation', () => {
     const doneListener = mocks.listeners.get('llm:stream-done')
     doneListener?.({ requestId, fullText: '旧版本残缺正文' })
 
-    expect(onDone).toHaveBeenCalledWith('旧版本残缺正文', undefined, 'unknown')
+    expect(onDone).toHaveBeenCalledWith('旧版本残缺正文', undefined, 'unknown', undefined)
   })
 
   it('rejects a stream that the main process did not start', async () => {
