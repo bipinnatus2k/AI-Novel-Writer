@@ -27,6 +27,11 @@ export type ProviderReasoningDirective =
       thinkingBudget: number
     }
   | {
+      /** Anthropic extended thinking；`thinkingBudget` 为 0 表示关闭（不下发 thinking 参数）。 */
+      adapter: 'anthropic-thinking-budget'
+      thinkingBudget: number
+    }
+  | {
       adapter: 'deepseek-v4-thinking'
       thinking: 'disabled'
     }

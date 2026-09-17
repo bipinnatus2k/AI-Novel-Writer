@@ -6,6 +6,7 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import type { ILLMProvider, LLMGenerateOptions, LLMResponse, LLMStreamOptions } from '../provider.interface'
 import type { LLMFinishReason, TokenUsage } from '../../../src/shared/ipc-channels'
 import type { ModelProfile } from '../../../src/shared/ipc-channels'
+import type { ProviderReasoningDirective } from '../../../src/shared/reasoning-types'
 import {
   buildModelContext,
   createGeminiQuirkFetch,
@@ -111,6 +112,15 @@ interface WideStreamPart {
  * payload compatibility stays in request-quirks. Retries stay disabled:
  * generation side effects are billed per call and callers own attempt budgets.
  */
+/** Anthropic extended thinking：budget > 0 时启用 thinking，并必须省略
+ * temperature（Anthropic 要求 thinking 启用时采样参数取默认值 1）。 */
+function anthropicThinkingOptions(reasoning: ProviderReasoningDirective | undefined) {
+  if (reasoning?.adapter !== 'anthropic-thinking-budget' || reasoning.thinkingBudget <= 0) {
+    return undefined
+  }
+  return { type: 'enabled' as const, budgetTokens: reasoning.thinkingBudget }
+}
+
 export class AiSdkProvider implements ILLMProvider {
   async generate(
     model: ModelProfile,
@@ -120,12 +130,14 @@ export class AiSdkProvider implements ILLMProvider {
     try {
       const context = buildModelContext(opts.reasoning, opts.responseFormat?.type === 'json_object')
       const { instructions, conversation } = splitInstructions(messages)
+      const thinking = anthropicThinkingOptions(opts.reasoning)
       const result = await generateText({
         model: buildLanguageModel(model, context),
         instructions,
         messages: toModelMessages(conversation),
-        temperature: opts.temperature,
+        temperature: thinking ? undefined : opts.temperature,
         maxOutputTokens: opts.maxTokens ?? model.maxTokens,
+        ...(thinking ? { providerOptions: { anthropic: { thinking } } } : {}),
         maxRetries: 0,
       })
 
@@ -163,12 +175,14 @@ export class AiSdkProvider implements ILLMProvider {
     try {
       const context = buildModelContext(opts.reasoning, opts.responseFormat?.type === 'json_object')
       const { instructions, conversation } = splitInstructions(messages)
+      const thinking = anthropicThinkingOptions(opts.reasoning)
       const result = streamText({
         model: buildLanguageModel(model, context),
         instructions,
         messages: toModelMessages(conversation),
-        temperature: opts.temperature,
+        temperature: thinking ? undefined : opts.temperature,
         maxOutputTokens: opts.maxTokens ?? model.maxTokens,
+        ...(thinking ? { providerOptions: { anthropic: { thinking } } } : {}),
         abortSignal: opts.signal,
         maxRetries: 0,
       })

@@ -320,9 +320,56 @@ export function createProviderCatalog(): ProviderPreset[] {
     baseUrl: 'https://api.anthropic.com',
     protocol: 'anthropic',
     models: [
-      { name: 'claude-sonnet-4-5', maxTokens: 64_000 },
-      { name: 'claude-haiku-4-5', maxTokens: 64_000 },
-      { name: 'claude-opus-4-1', maxTokens: 32_000 },
+      {
+        name: 'claude-sonnet-4-5',
+        maxTokens: 64_000,
+        capabilities: {
+          contextWindowTokens: 200_000,
+          maxOutputTokens: 64_000,
+          reasoning: true,
+          structuredOutput: true,
+          usage: true,
+        },
+        // https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking
+        // budget_tokens 最小 1024；off 由传输层省略 thinking 参数实现。
+        reasoningMapping: {
+          adapter: 'anthropic-thinking-budget',
+          supportedEfforts: ['off', 'low', 'medium', 'high'],
+          providerValues: { off: 0, low: 2_048, medium: 8_192, high: 24_576 },
+        },
+      },
+      {
+        name: 'claude-haiku-4-5',
+        maxTokens: 64_000,
+        capabilities: {
+          contextWindowTokens: 200_000,
+          maxOutputTokens: 64_000,
+          reasoning: true,
+          structuredOutput: true,
+          usage: true,
+        },
+        reasoningMapping: {
+          adapter: 'anthropic-thinking-budget',
+          supportedEfforts: ['off', 'low', 'medium', 'high'],
+          providerValues: { off: 0, low: 2_048, medium: 8_192, high: 24_576 },
+        },
+      },
+      {
+        name: 'claude-opus-4-1',
+        maxTokens: 32_000,
+        capabilities: {
+          contextWindowTokens: 200_000,
+          maxOutputTokens: 32_000,
+          reasoning: true,
+          structuredOutput: true,
+          usage: true,
+        },
+        reasoningMapping: {
+          adapter: 'anthropic-thinking-budget',
+          supportedEfforts: ['off', 'low', 'medium', 'high'],
+          providerValues: { off: 0, low: 2_048, medium: 8_192, high: 24_576 },
+        },
+      },
     ],
     embeddingModels: [],
   },

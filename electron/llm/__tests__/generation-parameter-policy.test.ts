@@ -109,4 +109,47 @@ describe('generation parameter policy', () => {
       reasoning: { adapter: 'openai-reasoning-effort', reasoningEffort: 'high' },
     })
   })
+
+  it('maps anthropic planning requests to the extended thinking budget', () => {
+    expect(resolveGenerationParameters({
+      ...openAIModel,
+      provider: 'anthropic',
+      protocol: 'anthropic',
+      modelName: 'claude-sonnet-4-5',
+      baseUrl: 'https://api.anthropic.com',
+    }, { maxTokens: 512, creativeStrategy: 'auto', reasoningStage: 'planning' })).toEqual({
+      temperature: 1,
+      maxTokens: 512,
+      reasoning: { adapter: 'anthropic-thinking-budget', thinkingBudget: 8192 },
+    })
+  })
+
+  it('resolves the anthropic off effort to a zero budget directive', () => {
+    expect(resolveGenerationParameters({
+      ...openAIModel,
+      provider: 'anthropic',
+      protocol: 'anthropic',
+      modelName: 'claude-sonnet-4-5',
+      baseUrl: 'https://api.anthropic.com',
+      reasoningOverride: 'off',
+    }, { maxTokens: 512, reasoningStage: 'drafting' })).toEqual({
+      temperature: 1,
+      maxTokens: 512,
+      reasoning: { adapter: 'anthropic-thinking-budget', thinkingBudget: 0 },
+    })
+  })
+
+  it('does not map anthropic thinking through a relay base URL', () => {
+    expect(resolveGenerationParameters({
+      ...openAIModel,
+      provider: 'anthropic',
+      protocol: 'anthropic',
+      modelName: 'claude-sonnet-4-5',
+      baseUrl: 'https://relay.example.test/v1',
+      reasoningOverride: 'high',
+    }, { maxTokens: 512, reasoningStage: 'planning' })).toEqual({
+      temperature: 1,
+      maxTokens: 512,
+    })
+  })
 })

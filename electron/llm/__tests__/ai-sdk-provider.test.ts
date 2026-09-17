@@ -496,4 +496,60 @@ describe('AiSdkProvider anthropic protocol', () => {
     expect(response.finishReason).toBe('length')
     expect(response.content).toBe('截断')
   })
+
+  it('enables extended thinking through the wire thinking parameter and omits temperature', async () => {
+    const { requests } = installFetchMock(() => jsonBodyResponse({
+      id: 'msg_4',
+      type: 'message',
+      role: 'assistant',
+      model: 'claude-sonnet-4-5',
+      content: [
+          { type: 'thinking', thinking: '构思中', signature: 'sig-token' },
+        { type: 'text', text: '带推理的正文' },
+      ],
+      stop_reason: 'end_turn',
+      stop_sequence: null,
+      usage: { input_tokens: 12, output_tokens: 40 },
+    }))
+    const provider = new AiSdkProvider()
+
+    const response = await provider.generate(anthropicModel, [{ role: 'user', content: '继续写' }], {
+      temperature: 0.7,
+      maxTokens: 16_000,
+      reasoning: { adapter: 'anthropic-thinking-budget', thinkingBudget: 8192 },
+    })
+
+    expect(response.success).toBe(true)
+    // 推理块不得进入可见正文
+    expect(response.content).toBe('带推理的正文')
+
+    const request = requests[0]
+    expect(request.body.thinking).toEqual({ type: 'enabled', budget_tokens: 8192 })
+    // Anthropic 要求 thinking 启用时采样参数取默认值，必须省略 temperature
+    expect(request.body).not.toHaveProperty('temperature')
+  })
+
+  it('omits the thinking parameter entirely when the resolved budget is zero', async () => {
+    const { requests } = installFetchMock(() => jsonBodyResponse({
+      id: 'msg_5',
+      type: 'message',
+      role: 'assistant',
+      model: 'claude-sonnet-4-5',
+      content: [{ type: 'text', text: '普通正文' }],
+      stop_reason: 'end_turn',
+      stop_sequence: null,
+      usage: { input_tokens: 5, output_tokens: 3 },
+    }))
+    const provider = new AiSdkProvider()
+
+    const response = await provider.generate(anthropicModel, [{ role: 'user', content: '继续写' }], {
+      temperature: 0.7,
+      maxTokens: 4096,
+      reasoning: { adapter: 'anthropic-thinking-budget', thinkingBudget: 0 },
+    })
+
+    expect(response.success).toBe(true)
+    expect(requests[0].body).not.toHaveProperty('thinking')
+    expect(requests[0].body.temperature).toBe(0.7)
+  })
 })
