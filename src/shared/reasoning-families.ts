@@ -54,6 +54,17 @@ const FAMILY_RULES: readonly FamilyRule[] = [
   { match: { namePrefix: 'gpt-5' }, mapping: OPENAI_EFFORT },
 ]
 
+/** 无法从家族/元数据得出档位时的协议默认档位（models.dev 元数据层使用）。 */
+export function defaultReasoningMappingForProtocol(protocol: string): VerifiedReasoningMapping {
+  if (protocol === 'anthropic') {
+    return { ...ANTHROPIC_BUDGET, adapter: 'anthropic-thinking-budget' }
+  }
+  if (protocol === 'gemini') {
+    return { ...GEMINI_BUDGET, adapter: 'gemini-thinking-budget' }
+  }
+  return { ...OPENAI_EFFORT, adapter: 'openai-reasoning-effort' }
+}
+
 /**
  * 按模型家族推断推理映射;无法识别的家族返回 undefined
  * (调用方回退到「不支持 / 不发送参数」)。

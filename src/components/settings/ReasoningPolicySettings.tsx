@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import type { ModelProfile } from '../../shared/ipc-channels'
 import { projectSessionContextFromProject } from '../../shared/project-session-context'
@@ -67,6 +67,18 @@ export function ModelReasoningOverrideSettings({
 }) {
   const text = useLocaleStore(state => state.text)
   const creativeStrategy = useProjectStore(state => state.currentProject?.novelConfig.creativeStrategy ?? 'auto')
+  // models.dev 元数据快照按需加载:加载后未收录家族的模型也能显示推理档位
+  const [, setMetadataReady] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    void import('../../shared/reasoning-metadata')
+      .then(m => m.ensureModelMetadataLoaded())
+      .then(() => {
+        if (!cancelled) setMetadataReady(true)
+      })
+      .catch(() => { /* 元数据不可用时保持家族推断/全量回退 */ })
+    return () => { cancelled = true }
+  }, [model.modelName])
   const effortLabel = (value: ReasoningEffort | EffectiveReasoningEffort | null): string => {
     if (value === null) return '—'
     return {
@@ -96,14 +108,12 @@ export function ModelReasoningOverrideSettings({
     inferred: text('按模型推断', 'Inferred from model'),
     unsupported: text('不支持 / 不发送参数', 'Unsupported / no parameter sent'),
   }[status])
-
   // 按模型映射过滤可选档位:已验证映射用验证档位,家族推断用推断档位;
   // 无法识别的模型保持全量选项(此时均为不发送参数的偏好声明)。
   const resolvedMapping = resolveModelReasoningMapping(model)
   const overrideOptions: ReasoningEffort[] = resolvedMapping
     ? [...resolvedMapping.mapping.supportedEfforts]
     : ['off', 'low', 'medium', 'high', 'max']
-  const isInferred = resolvedMapping?.origin === 'inferred'
 
   const outcome = (
     label: string,
@@ -141,17 +151,19 @@ export function ModelReasoningOverrideSettings({
           )}
         </NativeSelect>
         <p className="mt-1 text-[0.7rem] text-[var(--color-text-muted)]">
-          {resolvedMapping
-            ? (isInferred
-              ? text('档位按模型家族推断(未经官方端点验证);实际值以端点接受为准。', 'Efforts are inferred from the model family (not verified against an official endpoint); the endpoint decides what it accepts.')
-              : text(
-                '这是请求偏好，不是跨服务商的统一质量刻度；实际值取决于已验证的模型映射。',
-                'This is a request preference, not a universal quality scale; the effective value depends on a verified model mapping.',
-              ))
-            : text(
-              '未能从模型家族识别推理能力：选项仅作为偏好保存，不会发送参数。',
-              'Reasoning support could not be identified from the model family: options are saved as preferences only and no parameter is sent.',
-            )}
+          {resolvedMapping?.origin === 'verified'
+            ? text(
+              '这是请求偏好，不是跨服务商的统一质量刻度；实际值取决于已验证的模型映射。',
+              'This is a request preference, not a universal quality scale; the effective value depends on a verified model mapping.',
+            )
+            : resolvedMapping?.origin === 'models-dev'
+              ? text('档位来自 models.dev 模型元数据，按所选模型动态给出。', 'Efforts come from models.dev model metadata for the selected model.')
+              : resolvedMapping?.origin === 'family'
+                ? text('档位按模型家族推断(未经官方端点验证);实际值以端点接受为准。', 'Efforts are inferred from the model family (not verified against an official endpoint); the endpoint decides what it accepts.')
+                : text(
+                  '未能从模型家族识别推理能力：选项仅作为偏好保存，不会发送参数。',
+                  'Reasoning support could not be identified from the model family: options are saved as preferences only and no parameter is sent.',
+                )}
         </p>
       </div>
 

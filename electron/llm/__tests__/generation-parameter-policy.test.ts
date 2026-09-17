@@ -139,7 +139,7 @@ describe('generation parameter policy', () => {
     })
   })
 
-  it('does not map anthropic thinking through a relay base URL', () => {
+  it('maps anthropic thinking through a relay base URL via family inference', () => {
     expect(resolveGenerationParameters({
       ...openAIModel,
       provider: 'anthropic',
@@ -150,6 +150,7 @@ describe('generation parameter policy', () => {
     }, { maxTokens: 512, reasoningStage: 'planning' })).toEqual({
       temperature: 1,
       maxTokens: 512,
+      reasoning: { adapter: 'anthropic-thinking-budget', thinkingBudget: 24_576 },
     })
   })
 })

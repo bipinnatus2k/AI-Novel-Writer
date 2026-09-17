@@ -1,6 +1,6 @@
 import type { ModelProfile } from './ipc-channels'
 import { resolveModelProfileReasoningMapping } from './provider-presets'
-import { inferFamilyReasoningMapping } from './reasoning-families'
+import { defaultReasoningMappingForProtocol, inferFamilyReasoningMapping } from './reasoning-families'
 import type {
   CreativeStrategy,
   EffectiveReasoningEffort,
@@ -80,16 +80,31 @@ function closestEffectiveEffort(
 /**
  * 模型推理映射解析:已验证内置映射(官方端点 + 精确 slug)优先;
  * 未命中时按模型家族推断兜底(中转/发现模型可用,UI 会标注为推断)。
+ * models.dev 元数据探针(main 侧加载后注册)优先于家族推断——
+ * 元数据是按模型的真实数据,精确度高于名称推断。
  */
 export function resolveModelReasoningMapping(model: ModelProfile): {
   mapping: VerifiedReasoningMapping
-  origin: 'verified' | 'inferred'
+  origin: 'verified' | 'family' | 'models-dev'
 } | undefined {
   const verified = resolveModelProfileReasoningMapping(model)
   if (verified) return { mapping: verified, origin: 'verified' }
+  const metadata = modelMetadataProbe?.({ modelName: model.modelName })
+  if (metadata?.reasoning) {
+    return { mapping: defaultReasoningMappingForProtocol(model.protocol), origin: 'models-dev' }
+  }
   const inferred = inferFamilyReasoningMapping(model)
-  if (inferred) return { mapping: inferred, origin: 'inferred' }
+  if (inferred) return { mapping: inferred, origin: 'family' }
   return undefined
+}
+
+type ModelMetadataProbe = (model: { modelName: string }) => { reasoning: boolean } | undefined
+
+let modelMetadataProbe: ModelMetadataProbe | undefined
+
+/** 由 reasoning-metadata 在 models.dev 快照加载完成后注册。 */
+export function registerModelMetadataProbe(probe: ModelMetadataProbe): void {
+  modelMetadataProbe = probe
 }
 
 /**
@@ -124,9 +139,9 @@ export function resolveReasoningPolicy(input: {
   return {
     requested,
     effective: resolved.effective,
-    status: resolvedMapping.origin === 'inferred'
-      ? resolved.status === 'mapped' ? 'inferred' : resolved.status
-      : resolved.status,
+    status: resolvedMapping.origin === 'verified'
+      ? resolved.status
+      : resolved.status === 'mapped' ? 'inferred' : resolved.status,
     source,
     providerDirective: directive,
   }

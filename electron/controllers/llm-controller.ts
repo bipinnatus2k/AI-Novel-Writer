@@ -19,6 +19,7 @@ import {
   ModelExecutionLeaseRegistry,
 } from '../services/model-execution-lease'
 import { ModelDiscoveryService } from '../services/model-discovery-service'
+import { ensureModelMetadataLoaded } from '../../src/shared/reasoning-metadata'
 
 interface ActiveStream {
   controller: AbortController
@@ -164,6 +165,9 @@ export function registerLLMController() {
         ? modelExecutionLeases.resolve(request.modelExecutionLeaseId)
         : getModelConfig(request.modelId)
       if (!model) return { success: false, content: '', finishReason: 'error', error: '未找到模型配置' }
+      try {
+        await ensureModelMetadataLoaded()
+      } catch { /* 元数据不可用时按家族推断/不支持处理 */ }
 
       const provider = LLMFactory.getProvider()
       const result = await provider.generate(
@@ -190,6 +194,10 @@ export function registerLLMController() {
       return { requestId, started: false, error: String(error) }
     }
     if (!model) return { requestId, started: false }
+    try {
+      // models.dev 元数据探针就位后,未收录家族的推理档位才能参与参数解析
+      await ensureModelMetadataLoaded()
+    } catch { /* 元数据不可用时按家族推断/不支持处理 */ }
     const generationParameters = resolveGenerationParameters(model, request)
 
     const abortController = new AbortController()
@@ -382,6 +390,9 @@ export function registerLLMController() {
           await generateEmbeddings(['hello'], model.protocol, model)
         }
       } else {
+        try {
+          await ensureModelMetadataLoaded()
+        } catch { /* 元数据不可用时按家族推断/不支持处理 */ }
         const res = await provider.generate(
           model,
           messages,
