@@ -15,7 +15,13 @@ export type ReasoningEffort = typeof REASONING_EFFORTS[number]
 export type EffectiveReasoningEffort = ReasoningEffort
 export type ReasoningOverride = 'auto' | ReasoningEffort
 
-export type ReasoningResolutionStatus = 'mapped' | 'capped' | 'forced' | 'unsupported'
+export type ReasoningResolutionStatus =
+  | 'mapped'
+  | 'capped'
+  | 'forced'
+  /** 按模型家族推断(中转/未收录模型),档位非官方验证值。 */
+  | 'inferred'
+  | 'unsupported'
 
 export type ProviderReasoningDirective =
   | {

@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 import type { ModelProfile } from '../../shared/ipc-channels'
 import { projectSessionContextFromProject } from '../../shared/project-session-context'
-import { resolveReasoningPolicy } from '../../shared/reasoning-policy'
+import { resolveModelReasoningMapping, resolveReasoningPolicy } from '../../shared/reasoning-policy'
 import type {
   CreativeStrategy,
   EffectiveReasoningEffort,
@@ -93,8 +93,17 @@ export function ModelReasoningOverrideSettings({
     mapped: text('已映射', 'Mapped'),
     capped: text('已限制', 'Capped'),
     forced: text('模型强制', 'Model-forced'),
+    inferred: text('按模型推断', 'Inferred from model'),
     unsupported: text('不支持 / 不发送参数', 'Unsupported / no parameter sent'),
   }[status])
+
+  // 按模型映射过滤可选档位:已验证映射用验证档位,家族推断用推断档位;
+  // 无法识别的模型保持全量选项(此时均为不发送参数的偏好声明)。
+  const resolvedMapping = resolveModelReasoningMapping(model)
+  const overrideOptions: ReasoningEffort[] = resolvedMapping
+    ? [...resolvedMapping.mapping.supportedEfforts]
+    : ['off', 'low', 'medium', 'high', 'max']
+  const isInferred = resolvedMapping?.origin === 'inferred'
 
   const outcome = (
     label: string,
@@ -122,17 +131,27 @@ export function ModelReasoningOverrideSettings({
           aria-label={text('模型推理覆盖', 'Model reasoning override')}
         >
           <option value="auto">{text('自动（遵循项目与阶段）', 'Auto (project and stage)')}</option>
-          <option value="off">{text('关闭', 'Off')}</option>
-          <option value="low">{text('低', 'Low')}</option>
-          <option value="medium">{text('中', 'Medium')}</option>
-          <option value="high">{text('高', 'High')}</option>
-          <option value="max">{text('最高', 'Max')}</option>
+          {overrideOptions.map(effort => (
+            <option key={effort} value={effort}>{effortLabel(effort)}</option>
+          ))}
+          {/* 已保存但不在当前模型支持列表内的覆盖:保留显示,避免静默丢设置 */}
+          {model.reasoningOverride && model.reasoningOverride !== 'auto'
+            && !overrideOptions.includes(model.reasoningOverride) && (
+            <option value={model.reasoningOverride}>{effortLabel(model.reasoningOverride)}</option>
+          )}
         </NativeSelect>
         <p className="mt-1 text-[0.7rem] text-[var(--color-text-muted)]">
-          {text(
-            '这是请求偏好，不是跨服务商的统一质量刻度；实际值取决于已验证的模型映射。',
-            'This is a request preference, not a universal quality scale; the effective value depends on a verified model mapping.',
-          )}
+          {resolvedMapping
+            ? (isInferred
+              ? text('档位按模型家族推断(未经官方端点验证);实际值以端点接受为准。', 'Efforts are inferred from the model family (not verified against an official endpoint); the endpoint decides what it accepts.')
+              : text(
+                '这是请求偏好，不是跨服务商的统一质量刻度；实际值取决于已验证的模型映射。',
+                'This is a request preference, not a universal quality scale; the effective value depends on a verified model mapping.',
+              ))
+            : text(
+              '未能从模型家族识别推理能力：选项仅作为偏好保存，不会发送参数。',
+              'Reasoning support could not be identified from the model family: options are saved as preferences only and no parameter is sent.',
+            )}
         </p>
       </div>
 

@@ -104,8 +104,8 @@ describe('reasoning policy', () => {
     })).toMatchObject({ requested: 'off', effective: 'low', status: 'forced' })
   })
 
-  it('suppresses reasoning fields for unknown custom endpoints and unverified built-in models', () => {
-    const custom = {
+  it('infers reasoning mapping from the model family when the endpoint is not an official one', () => {
+    const relayedGemini = {
       ...geminiFlashLite,
       provider: 'custom' as const,
       protocol: 'openai' as const,
@@ -113,13 +113,15 @@ describe('reasoning policy', () => {
       modelName: 'gemini-2.5-flash-lite',
       reasoningOverride: 'high' as const,
     }
-    expect(resolveReasoningPolicy({ model: custom, stage: 'planning' })).toEqual({
+    expect(resolveReasoningPolicy({ model: relayedGemini, stage: 'planning' })).toEqual({
       requested: 'high',
-      effective: null,
-      status: 'unsupported',
+      effective: 'high',
+      status: 'inferred',
       source: 'model-override',
+      providerDirective: { adapter: 'gemini-thinking-budget', thinkingBudget: 24_576 },
     })
 
+    // 未收录的 deepseek 家族模型同样按家族推断(中别名映射到 high)
     const unverifiedDeepSeek = {
       ...geminiFlashLite,
       provider: 'deepseek' as const,
@@ -128,8 +130,30 @@ describe('reasoning policy', () => {
       modelName: 'deepseek-future-model',
       reasoningOverride: 'high' as const,
     }
-    expect(resolveReasoningPolicy({ model: unverifiedDeepSeek, stage: 'planning' }))
-      .not.toHaveProperty('providerDirective')
+    expect(resolveReasoningPolicy({ model: unverifiedDeepSeek, stage: 'planning' })).toEqual({
+      requested: 'high',
+      effective: 'high',
+      status: 'inferred',
+      source: 'model-override',
+      providerDirective: { adapter: 'deepseek-v4-thinking', thinking: 'enabled', reasoningEffort: 'high' },
+    })
+  })
+
+  it('still leaves truly unknown model families unsupported', () => {
+    const unknown = {
+      ...geminiFlashLite,
+      provider: 'custom' as const,
+      protocol: 'openai' as const,
+      baseUrl: 'https://relay.example.test/v1',
+      modelName: 'acme-narrative-9000',
+      reasoningOverride: 'high' as const,
+    }
+    expect(resolveReasoningPolicy({ model: unknown, stage: 'planning' })).toEqual({
+      requested: 'high',
+      effective: null,
+      status: 'unsupported',
+      source: 'model-override',
+    })
   })
 
   it('maps the exact official DeepSeek V4 profile without trusting persisted capability flags', () => {
@@ -205,14 +229,13 @@ describe('reasoning policy', () => {
 
   it.each([
     ['siliconflow', 'https://api.siliconflow.cn/v1', 'deepseek-ai/DeepSeek-V3.2'],
-    ['custom', 'https://qwen-proxy.example.test/v1', 'qwen-long'],
     ['deepseek', 'https://deepseek-proxy.example.test/v1', 'deepseek-v4-flash'],
-  ] as const)('does not inject official DeepSeek V4 fields for %s/%s/%s', (
+  ] as const)('infers DeepSeek V4 fields from the model family on %s/%s', (
     provider,
     baseUrl,
     modelName,
   ) => {
-    expect(resolveReasoningPolicy({
+    const resolution = resolveReasoningPolicy({
       model: {
         ...geminiFlashLite,
         provider,
@@ -222,7 +245,32 @@ describe('reasoning policy', () => {
         reasoningOverride: 'low',
       },
       stage: 'drafting',
-    })).not.toHaveProperty('providerDirective')
+    })
+    expect(resolution.status).toBe('inferred')
+    expect(resolution.providerDirective).toEqual({
+      adapter: 'deepseek-v4-thinking',
+      thinking: 'enabled',
+      reasoningEffort: 'low',
+    })
+  })
+
+  it('does not infer any reasoning adapter for model families without one', () => {
+    expect(resolveReasoningPolicy({
+      model: {
+        ...geminiFlashLite,
+        provider: 'custom',
+        protocol: 'openai',
+        baseUrl: 'https://qwen-proxy.example.test/v1',
+        modelName: 'qwen-long',
+        reasoningOverride: 'low',
+      },
+      stage: 'drafting',
+    })).toEqual({
+      requested: 'low',
+      effective: null,
+      status: 'unsupported',
+      source: 'model-override',
+    })
   })
 
   it('normalizes stale persisted policy values instead of sending an unverified parameter', () => {

@@ -1,5 +1,6 @@
 import type { ModelProfile } from './ipc-channels'
 import { resolveModelProfileReasoningMapping } from './provider-presets'
+import { inferFamilyReasoningMapping } from './reasoning-families'
 import type {
   CreativeStrategy,
   EffectiveReasoningEffort,
@@ -77,6 +78,21 @@ function closestEffectiveEffort(
 }
 
 /**
+ * 模型推理映射解析:已验证内置映射(官方端点 + 精确 slug)优先;
+ * 未命中时按模型家族推断兜底(中转/发现模型可用,UI 会标注为推断)。
+ */
+export function resolveModelReasoningMapping(model: ModelProfile): {
+  mapping: VerifiedReasoningMapping
+  origin: 'verified' | 'inferred'
+} | undefined {
+  const verified = resolveModelProfileReasoningMapping(model)
+  if (verified) return { mapping: verified, origin: 'verified' }
+  const inferred = inferFamilyReasoningMapping(model)
+  if (inferred) return { mapping: inferred, origin: 'inferred' }
+  return undefined
+}
+
+/**
  * The single reasoning-policy seam. Callers provide product intent; this
  * module owns profile precedence, verified capability lookup,
  * provider-level capping and the user-visible resolution receipt.
@@ -98,17 +114,19 @@ export function resolveReasoningPolicy(input: {
   const requested = override === 'auto'
     ? STAGE_REQUESTS[strategy][input.stage ?? 'general']
     : override
-  const mapping = resolveModelProfileReasoningMapping(input.model)
-  if (!mapping) return { requested, effective: null, status: 'unsupported', source }
+  const resolvedMapping = resolveModelReasoningMapping(input.model)
+  if (!resolvedMapping) return { requested, effective: null, status: 'unsupported', source }
 
-  const resolved = closestEffectiveEffort(requested, mapping)
+  const resolved = closestEffectiveEffort(requested, resolvedMapping.mapping)
   if (!resolved) return { requested, effective: null, status: 'unsupported', source }
-  const directive = providerDirective(mapping, resolved.effective)
+  const directive = providerDirective(resolvedMapping.mapping, resolved.effective)
   if (!directive) return { requested, effective: null, status: 'unsupported', source }
   return {
     requested,
     effective: resolved.effective,
-    status: resolved.status,
+    status: resolvedMapping.origin === 'inferred'
+      ? resolved.status === 'mapped' ? 'inferred' : resolved.status
+      : resolved.status,
     source,
     providerDirective: directive,
   }

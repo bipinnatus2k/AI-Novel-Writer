@@ -77,11 +77,13 @@ describe('reasoning policy settings', () => {
     expect(markup).toContain('模型推理覆盖')
     expect(markup).toContain('最高 → 高')
     expect(markup).toContain('已限制')
-    expect(markup).toContain('关闭')
-    expect(markup).toContain('低')
-    expect(markup).toContain('中')
-    expect(markup).toContain('高')
-    expect(markup).toContain('最高')
+    // grok 家族只支持 低/中/高;已保存的 max 覆盖作为额外选项保留显示
+    expect(markup).toContain('>自动（遵循项目与阶段）<')
+    expect(markup).toContain('>低<')
+    expect(markup).toContain('>中<')
+    expect(markup).toContain('>高<')
+    expect(markup).toContain('>最高<')
+    expect(markup).not.toContain('>关闭<')
   })
 
   it('localizes every reasoning override effort in English', () => {
@@ -91,11 +93,12 @@ describe('reasoning policy settings', () => {
       <ReasoningPolicySettings model={grok} onModelChange={() => {}} />,
     )
 
-    expect(markup).toContain('>Off<')
+    expect(markup).toContain('>Auto (project and stage)<')
     expect(markup).toContain('>Low<')
     expect(markup).toContain('>Medium<')
     expect(markup).toContain('>High<')
     expect(markup).toContain('>Max<')
+    expect(markup).not.toContain('>Off<')
     expect(markup).toContain('Max → High')
   })
 
