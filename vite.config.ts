@@ -68,6 +68,9 @@ export default defineConfig({
   test: {
     // Test copy must not follow the operating-system locale of a CI runner.
     setupFiles: ['test/setup-locale.ts'],
+    // 每次测试前自动把 better-sqlite3 校验/重编到 Node ABI(dev 的 predev
+    // 会切到 Electron ABI),消除手动 prepare:native-node 的双向依赖。
+    globalSetup: ['test/native-abi.global.mjs'],
     // 本地历史 worktree 和 pnpm 缓存可能包含旧版本测试；它们不是当前项目源码。
     exclude: [
       ...configDefaults.exclude,
