@@ -49,6 +49,8 @@ export interface AgentMessage {
   streaming?: boolean
   /** 模型推理内容（think 块 / reasoning 通道），从不与 content 混流 */
   reasoning?: string
+  /** 本轮输出因 max_tokens 截断：安全正文已保留，可点击「继续」续写 */
+  truncated?: boolean
   /** Tool 调用信息（Agent 回复时） */
   toolCalls?: ToolCallInfo[]
   /** 产物列表（Agent 创建/修改的文件、触发的工作流等） */
@@ -112,6 +114,8 @@ interface AgentState {
   setModelId: (modelId: string | null) => void
   /** 发送消息（触发 Agent ReAct 循环） */
   sendMessage: (content: string) => Promise<void>
+  /** 从截断处继续被 max_tokens 截断的最后一轮回复 */
+  continueGeneration: (conversationId: string) => Promise<void>
   /** 取消当前生成 */
   cancelGeneration: () => Promise<void>
   /** 响应 Tool 确认（用于 ConfirmCard） */
@@ -529,6 +533,9 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
               reasoning: (m.reasoning ?? '') + reasoning,
             }))
           },
+          onTruncated: () => {
+            updateAssistantMsg(m => ({ ...m, truncated: true }))
+          },
           onToolCallStart: (toolCall) => {
             updateAssistantMsg(m => ({
               ...m,
@@ -599,6 +606,155 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
         streaming: false,
       }))
       set({ generating: false, activeRequestId: null })
+    }
+  },
+
+  /** 从截断处继续：把半截 assistant 回复保留在历史中，自动发起续写一轮 */
+  continueGeneration: async (conversationId) => {
+    if (get().generating) return
+    const requestLocale = useLocaleStore.getState().locale
+    const text = (zhCNText: string, enUSText: string) => requestLocale === 'en-US' ? enUSText : zhCNText
+
+    const conv = get().conversations.find(c => c.id === conversationId)
+    if (!conv) return
+    const messages = [...conv.messages]
+    const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant' && m.truncated)
+    if (!lastAssistant) return
+
+    get().initializeTools()
+    const modelId = conv.modelId ?? undefined
+    const executionContext = createAgentExecutionContext(modelId, requestLocale)
+    const runtimeProject = executionContext.projectSession
+      ? {
+          projectSession: executionContext.projectSession,
+          creativeStrategy: useProjectStore.getState().currentProject?.novelConfig.creativeStrategy ?? 'auto',
+        }
+      : {}
+
+    const assistantId = lastAssistant.id
+    let truncatedInRun = false
+    let continuedContent = lastAssistant.content
+
+    const updateAssistantMsg = (updater: (msg: AgentMessage) => AgentMessage) => {
+      set(state => ({
+        conversations: state.conversations.map(c =>
+          c.id === conversationId
+            ? {
+                ...c,
+                messages: c.messages.map(m =>
+                  m.id === assistantId ? updater(m) : m
+                ),
+              }
+            : c
+        ),
+      }))
+    }
+
+    set(state => ({
+      generating: true,
+      conversations: state.conversations.map(c =>
+        c.id === conversationId
+          ? {
+              ...c,
+              messages: c.messages.map(m =>
+                m.id === assistantId ? { ...m, streaming: true, truncated: false } : m
+              ),
+              updatedAt: Date.now(),
+            }
+          : c
+      ),
+    }))
+
+    try {
+      const systemPrompt = await buildAgentSystemPrompt(conv.mode, executionContext)
+      const abortController = new AbortController()
+      activeAbortController = abortController
+
+      const runtime = await createGenerationRuntime({
+        ...(conv.modelId ? { modelId: conv.modelId } : {}),
+        ...runtimeProject,
+        budget: AGENT_GENERATION_BUDGET,
+      })
+
+      // 历史含半截 assistant 回复;以一条不可见的继续指令收尾
+      const history = messages
+        .filter(m => !m.streaming && m.role !== 'system')
+        .slice(-16)
+        .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+
+      await runtime.execute(async ({ session }) => runAgentLoop(
+        systemPrompt,
+        history,
+        text('（请从上面被截断处继续，不要重复已有内容。）', '(Continue from where the output was cut off; do not repeat existing content.)'),
+        conv.modelId ?? undefined,
+        async (loopMessages) => {
+          const outcome = await session.complete({
+            purpose: 'agent',
+            reasoningStage: 'general',
+            output: 'visible-text',
+            messages: loopMessages.map(message => ({
+              role: message.role,
+              content: message.content,
+            })),
+          }, { signal: abortController.signal })
+          if (outcome.status !== 'completed') {
+            throw new Error(text('AI 未正常完成生成。', 'The AI did not complete the response normally.'))
+          }
+          return { content: outcome.content, reasoning: outcome.reasoning }
+        },
+        {
+          onTextChunk: (chunk) => {
+            continuedContent += cleanAgentVisibleText(chunk)
+            updateAssistantMsg(m => ({ ...m, content: continuedContent }))
+          },
+          onTruncated: () => {
+            truncatedInRun = true
+            updateAssistantMsg(m => ({ ...m, truncated: true }))
+          },
+          onToolCallStart: (toolCall) => {
+            updateAssistantMsg(m => ({ ...m, toolCalls: [...(m.toolCalls ?? []), toolCall] }))
+          },
+          onToolCallComplete: (toolCall) => {
+            updateAssistantMsg(m => ({
+              ...m,
+              toolCalls: (m.toolCalls ?? []).map(tc => tc.id === toolCall.id ? toolCall : tc),
+            }))
+          },
+          onToolCallConfirmRequired: (toolCall) => {
+            updateAssistantMsg(m => ({
+              ...m,
+              toolCalls: (m.toolCalls ?? []).map(tc =>
+                tc.id === toolCall.id ? { ...tc, status: 'waiting_confirm' as const } : tc
+              ),
+            }))
+            return new Promise<boolean | ToolConfirmationDecision>((resolve) => {
+              pendingConfirmations.set(toolCall.id, { resolve })
+            })
+          },
+          onDone: (_fullText, toolCalls, artifacts) => {
+            activeAbortController = null
+            updateAssistantMsg(m => ({
+              ...m,
+              streaming: false,
+              truncated: truncatedInRun,
+              toolCalls,
+              artifacts: artifacts.length > 0 ? artifacts : undefined,
+            }))
+            set({ generating: false })
+          },
+          onError: () => {
+            activeAbortController = null
+            updateAssistantMsg(m => ({ ...m, streaming: false }))
+            set({ generating: false })
+          },
+        },
+        abortController.signal,
+        executionContext,
+      ))
+    } catch {
+      activeAbortController = null
+      updateAssistantMsg(m => ({ ...m, streaming: false }))
+      set({ generating: false })
     }
   },
 

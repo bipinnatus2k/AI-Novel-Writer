@@ -104,7 +104,7 @@ function EmptyState() {
 
 function ActiveConversation() {
   const text = useLocaleStore(s => s.text)
-  const { getActiveConversation, generating } = useAgentStore()
+  const { getActiveConversation, generating, continueGeneration } = useAgentStore()
   const activeConv = getActiveConversation()
   const scrollRef = useRef<HTMLDivElement>(null)
   const [isAtBottom, setIsAtBottom] = useState(true)
@@ -149,7 +149,11 @@ function ActiveConversation() {
           {activeConv.messages
             .filter(m => m.role !== 'system')
             .map(msg => (
-              <AgentMessage key={msg.id} message={msg} />
+              <AgentMessage
+                key={msg.id}
+                message={msg}
+                onContinue={msg.truncated && !generating ? () => void continueGeneration(activeConv.id) : undefined}
+              />
             ))}
         </div>
         {/* 底部空间 */}

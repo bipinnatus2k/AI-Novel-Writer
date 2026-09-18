@@ -66,6 +66,8 @@ export interface AgentEngineCallbacks {
   onTextChunk: (chunk: string) => void
   /** 本轮模型推理内容（think 块 / reasoning 通道） */
   onReasoningChunk?: (reasoning: string) => void
+  /** 本轮因 max_tokens 截断：安全正文已保留，等待用户决定是否继续 */
+  onTruncated?: () => void
   /** Tool 调用开始 */
   onToolCallStart: (toolCall: ToolCallInfo) => void
   /** Tool 调用完成 */
@@ -91,6 +93,8 @@ export interface AgentGenerationResult {
   toolCalls?: LLMToolCall[]
   /** 模型推理内容（think 块 / reasoning 通道）。 */
   reasoning?: string
+  /** length = 输出在 max_tokens 处被截断；截断轮保留安全正文但不执行工具。 */
+  finishReason?: string
 }
 
 /** LLM 生成函数签名（由 agent-store 提供实际实现） */
@@ -111,6 +115,19 @@ export function cleanAgentVisibleText(text: string): string {
     .replace(/<\/?tool_result[^>]*>/g, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
+}
+
+/**
+ * 长度截断轮的安全正文：截断可能发生在协议块中间——去掉最后一个
+ * 未闭合的工具调用/结果标记及其后的全部内容（半截 JSON 不可执行），
+ * 保留其前确定完整的正文。
+ */
+export function sanitizeTruncatedContent(text: string): string {
+  const lastToolCall = text.lastIndexOf('<tool_call>')
+  const lastToolResult = text.lastIndexOf('<tool_result')
+  const cut = Math.max(lastToolCall, lastToolResult)
+  const safe = cut >= 0 ? text.slice(0, cut) : text
+  return cleanAgentVisibleText(safe)
 }
 
 // ===== 核心引擎 =====
@@ -188,6 +205,19 @@ export async function runAgentLoop(
     // 推理内容走独立通道，永不进入正文
     if (generation.reasoning) {
       callbacks.onReasoningChunk?.(generation.reasoning)
+    }
+
+    // 长度截断：保留安全的正文部分（去掉残缺的协议块），标记截断后结束本轮，
+    // 由 UI 提供「继续」按钮发起续写；截断轮不执行工具（半截 JSON 不安全）。
+    if (generation.finishReason === 'length') {
+      const safeContent = sanitizeTruncatedContent(cleanAgentVisibleText(generation.content))
+      if (safeContent) {
+        callbacks.onTextChunk(safeContent)
+        fullAssistantText += safeContent
+      }
+      callbacks.onTruncated?.()
+      callbacks.onDone(fullAssistantText, allToolCalls, allArtifacts)
+      return
     }
 
     // 工具调用由传输层从文本方言中解析为结构化结果；正文已不含协议文本

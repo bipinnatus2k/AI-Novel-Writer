@@ -7,7 +7,7 @@
  * - Tool 调用：ToolCallBlock / ConfirmCard / ArtifactCard
  */
 import { useState } from 'react'
-import { Check, Copy } from 'lucide-react'
+import { Check, Copy, Play } from 'lucide-react'
 import type { AgentMessage as AgentMessageType } from '../../../stores/agent-store'
 import { useLocaleStore } from '../../../stores/locale-store'
 import MarkdownContent, { StreamingCursor } from '../../ui/MarkdownContent'
@@ -19,10 +19,12 @@ import '../../../styles/agent-tools.css'
 
 interface Props {
   message: AgentMessageType
+  /** 截断消息的续写回调（提供时才渲染「继续」按钮） */
+  onContinue?: () => void
 }
 
-export default function AgentMessage({ message }: Props) {
-  const { role, content, streaming, reasoning, toolCalls, artifacts } = message
+export default function AgentMessage({ message, onContinue }: Props) {
+  const { role, content, streaming, reasoning, truncated, toolCalls, artifacts } = message
   const text = useLocaleStore(state => state.text)
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const copyMessage = async () => {
@@ -105,6 +107,24 @@ export default function AgentMessage({ message }: Props) {
                 <ToolCallBlock key={tc.id} toolCall={tc} />
               )
             ))}
+          </div>
+        )}
+
+        {/* 长度截断提示 + 继续按钮 */}
+        {truncated && !streaming && (
+          <div className="mt-2 flex items-center gap-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+            <span>{text('输出已达到最大长度被截断。', 'The output reached the max length and was truncated.')}</span>
+            {onContinue && (
+              <button
+                type="button"
+                onClick={onContinue}
+                className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors"
+                style={{ border: '1px solid var(--color-border)', color: 'var(--color-accent)' }}
+              >
+                <Play size={11} />
+                {text('继续', 'Continue')}
+              </button>
+            )}
           </div>
         )}
 
