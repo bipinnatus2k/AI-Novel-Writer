@@ -37,7 +37,8 @@ const ALL_OPENERS_TOOL_ONLY: readonly string[] = [DSML_DOUBLE_OPEN, ...TAGGED_OP
 
 /** 判断文本尾部是否存在某个标记的未完成前缀（跨 chunk 截断保护）。 */
 function longestMarkerPrefixSuffix(buffer: string): string {
-  const windowLength = Math.min(buffer.length, DSML_DOUBLE_OPEN.length)
+  const maxMarkerLength = Math.max(...ALL_OPENERS.map(marker => marker.length), THINK_CLOSE.length)
+  const windowLength = Math.min(buffer.length, maxMarkerLength)
   const window = buffer.slice(buffer.length - windowLength)
   for (let length = window.length; length > 0; length -= 1) {
     const suffix = window.slice(window.length - length)
