@@ -32,6 +32,8 @@ const TAGGED_OPENERS: ReadonlyArray<readonly [opener: string, closer: string]> =
 ]
 
 const ALL_OPENERS: readonly string[] = [DSML_DOUBLE_OPEN, THINK_OPEN, ...TAGGED_OPENERS.map(([opener]) => opener)]
+/** 推理通道模式只关心工具调用块，think 标记按普通文本透传。 */
+const ALL_OPENERS_TOOL_ONLY: readonly string[] = [DSML_DOUBLE_OPEN, ...TAGGED_OPENERS.map(([opener]) => opener)]
 
 /** 判断文本尾部是否存在某个标记的未完成前缀（跨 chunk 截断保护）。 */
 function longestMarkerPrefixSuffix(buffer: string): string {
@@ -62,12 +64,15 @@ export class ProtocolSegmenter {
   private dsmlParsedUpTo = 0
   /** 整段便捷模式：push 只缓冲，finish 时一次性判定（支持整段响应式方言）。 */
   private readonly bufferAll: boolean
+  /** 推理通道模式：所有分段走 reasoning 出口，工具调用块照常提取。 */
+  private readonly contentAsReasoning: boolean
   private readonly reasoningParts: string[] = []
   private readonly contentParts: string[] = []
   private readonly collectedToolCalls: LLMToolCall[] = []
 
-  constructor(options: { bufferAll?: boolean } = {}) {
+  constructor(options: { bufferAll?: boolean; contentAsReasoning?: boolean } = {}) {
     this.bufferAll = options.bufferAll ?? false
+    this.contentAsReasoning = options.contentAsReasoning ?? false
   }
 
   /** 已解析出的工具调用（流结束前随时可读，一般取自 finish 之后）。 */
@@ -126,6 +131,11 @@ export class ProtocolSegmenter {
   }
 
   private emit(result: SegmentedDelta, reasoning: string | undefined, content: string | undefined): void {
+    // 推理通道模式下,分段器的 content 出口映射为 reasoning
+    if (content && this.contentAsReasoning) {
+      reasoning = (reasoning ?? '') + content
+      content = undefined
+    }
     if (reasoning) {
       this.reasoningParts.push(reasoning)
       result.reasoning = (result.reasoning ?? '') + reasoning
@@ -244,7 +254,8 @@ export class ProtocolSegmenter {
       // text 模式：寻找最早的协议开启标记
       let openIndex = -1
       let opener = ''
-      for (const candidate of ALL_OPENERS) {
+      const candidates = this.contentAsReasoning ? ALL_OPENERS_TOOL_ONLY : ALL_OPENERS
+      for (const candidate of candidates) {
         const index = this.buffer.indexOf(candidate)
         if (index >= 0 && (openIndex < 0 || index < openIndex)) {
           openIndex = index

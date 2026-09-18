@@ -197,6 +197,8 @@ export class AiSdkProvider implements ILLMProvider {
 
       // 协议分段器：think 推理与工具调用方言在这里截住，正文增量才外发
       const segmenter = new ProtocolSegmenter()
+      // 推理通道同样提取工具调用方言（部分推理模型会把调用写进推理内容）
+      const reasoningSegmenter = new ProtocolSegmenter({ contentAsReasoning: true })
       const emitContent = (chunk: string) => {
         if (!chunk) return
         fullText += chunk
@@ -206,7 +208,9 @@ export class AiSdkProvider implements ILLMProvider {
       const parts: AsyncIterable<WideStreamPart> = result.fullStream
       for await (const part of parts) {
         if (part.type === 'reasoning-delta') {
-          opts.onReasoning?.(part.text ?? '')
+          const segmented = reasoningSegmenter.push(part.text ?? '')
+          if (segmented.reasoning) opts.onReasoning?.(segmented.reasoning)
+          if (segmented.content) opts.onReasoning?.(segmented.content)
         } else if (part.type === 'text-delta') {
           const segmented = segmenter.push(part.text ?? '')
           if (segmented.reasoning) opts.onReasoning?.(segmented.reasoning)
@@ -226,7 +230,15 @@ export class AiSdkProvider implements ILLMProvider {
       const flushed = segmenter.finish()
       if (flushed.reasoning) opts.onReasoning?.(flushed.reasoning)
       emitContent(flushed.content ?? '')
-      if (segmenter.toolCalls.length > 0) toolCalls = segmenter.toolCalls
+      const reasoningFlushed = reasoningSegmenter.finish()
+      if (reasoningFlushed.reasoning) opts.onReasoning?.(reasoningFlushed.reasoning)
+      const mergedCalls = [...segmenter.toolCalls, ...reasoningSegmenter.toolCalls]
+      if (mergedCalls.length > 0) toolCalls = mergedCalls
+      if (process.env.AI_NOVEL_DEBUG_SEGMENTER) {
+        console.log(
+          `[AiSdkProvider] stream done: content=${fullText.length}c reasoning=${(reasoningFlushed.reasoning ?? '').length}c toolCalls=${toolCalls?.length ?? 0} finishReason=${finishReason}`,
+        )
+      }
       opts.onDone(fullText, usage, finishReason, toolCalls)
     } catch (error) {
       if ((error as Error).name === 'AbortError') {
