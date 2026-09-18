@@ -235,9 +235,11 @@ export class AiSdkProvider implements ILLMProvider {
       const mergedCalls = [...segmenter.toolCalls, ...reasoningSegmenter.toolCalls]
       if (mergedCalls.length > 0) toolCalls = mergedCalls
       if (process.env.AI_NOVEL_DEBUG_SEGMENTER) {
+        const escaped = fullText.replace(/\\u/g, '\\\\u').slice(0, 400)
         console.log(
           `[AiSdkProvider] stream done: content=${fullText.length}c reasoning=${(reasoningFlushed.reasoning ?? '').length}c toolCalls=${toolCalls?.length ?? 0} finishReason=${finishReason}`,
         )
+        console.log(`[AiSdkProvider] content preview: ${JSON.stringify(escaped)}`)
       }
       opts.onDone(fullText, usage, finishReason, toolCalls)
     } catch (error) {
