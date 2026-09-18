@@ -23,14 +23,14 @@ import type { FileWriteCommitState, LLMToolCall } from '../../shared/ipc-channel
 
 // ===== 常量 =====
 
-/** ReAct 循环最大次数（防止死循环） */
-const MAX_TOOL_ROUNDS = 8
+/** ReAct 循环最大次数（防止死循环）；长文件分页读取需要更多轮次 */
+const MAX_TOOL_ROUNDS = 16
 
 /** Tool 执行超时（毫秒） */
 const TOOL_TIMEOUT_MS = 30_000
 
-/** Tool 返回内容最大长度（字符） */
-const TOOL_RESULT_MAX_CHARS = 3000
+/** Tool 返回内容最大长度（字符）；read_file 的分页窗口(12k)不应被此项截断 */
+const TOOL_RESULT_MAX_CHARS = 12_000
 
 // ===== 类型 =====
 

@@ -27,7 +27,8 @@ import { useProjectStore } from './project-store'
 import type { Locale } from '../i18n/types'
 
 export const AGENT_GENERATION_BUDGET = Object.freeze({
-  maxAttempts: 8,
+  // 分页读取长文件等合法工作流需要更多轮次；deadline 仍是硬上限
+  maxAttempts: 16,
   maxRequestedOutputTokens: 65_536,
   maxRequestedOutputTokensPerAttempt: 8192,
   deadlineMs: 20 * 60_000,
