@@ -11,6 +11,8 @@ import {
 import { useAgentStore, type AgentMode } from '../../../stores/agent-store'
 import { useLLMStore } from '../../../stores/llm-store'
 import type { ModelProfile } from '../../../shared/ipc-channels'
+import { resolveModelReasoningMapping } from '../../../shared/reasoning-policy'
+import type { ReasoningEffort, ReasoningOverride } from '../../../shared/reasoning-types'
 import { useOutsideClick } from '../../../hooks/useOutsideClick'
 import SlashCommandMenu from './SlashCommandMenu'
 import MentionMenu from './MentionMenu'
@@ -31,6 +33,7 @@ export default function AgentInputBox() {
   const { generating, sendMessage, cancelGeneration, getActiveConversation, setMode, setModelId } = useAgentStore()
   const models = useLLMStore(s => s.models)
   const defaultModelId = useLLMStore(s => s.defaultModelId)
+  const saveModel = useLLMStore(s => s.saveModel)
 
   // 过滤出非仅限 embedding 专用的模型
   const chatModels = models.filter(m => !(m.purposes.length === 1 && m.purposes[0] === 'embedding'))
@@ -46,6 +49,20 @@ export default function AgentInputBox() {
   const [showContextMenu, setShowContextMenu] = useState(false)
   const [showModeMenu, setShowModeMenu] = useState(false)
   const [showModelMenu, setShowModelMenu] = useState(false)
+  const [showEffortMenu, setShowEffortMenu] = useState(false)
+
+  // models.dev 元数据按需加载：加载后中转/新模型也能按元数据显示推理档位
+  const [, setMetadataReady] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    void import('../../../shared/reasoning-metadata')
+      .then(m => m.ensureModelMetadataLoaded())
+      .then(() => {
+        if (!cancelled) setMetadataReady(true)
+      })
+      .catch(() => { /* 元数据不可用时保持家族推断/全量回退 */ })
+    return () => { cancelled = true }
+  }, [])
 
   // / 命令和 @ 提及菜单状态
   const [showSlashMenu, setShowSlashMenu] = useState(false)
@@ -113,6 +130,7 @@ export default function AgentInputBox() {
   const contextRef = useRef<HTMLDivElement>(null)
   const modeRef = useRef<HTMLDivElement>(null)
   const modelRef = useRef<HTMLDivElement>(null)
+  const effortRef = useRef<HTMLDivElement>(null)
 
   // 调整文本框高度的通用函数
   const adjustHeight = useCallback(() => {
@@ -149,10 +167,11 @@ export default function AgentInputBox() {
     adjustHeight()
   }, [inputText, adjustHeight])
 
-  // 点击外部关闭下拉（用 useOutsideClick 统一管理三个 ref）
+  // 点击外部关闭下拉（用 useOutsideClick 统一管理四个 ref）
   useOutsideClick(contextRef, () => setShowContextMenu(false), showContextMenu)
   useOutsideClick(modeRef, () => setShowModeMenu(false), showModeMenu)
   useOutsideClick(modelRef, () => setShowModelMenu(false), showModelMenu)
+  useOutsideClick(effortRef, () => setShowEffortMenu(false), showEffortMenu)
 
   /** 发送或停止 */
   const handleSendOrStop = useCallback(async () => {
@@ -280,6 +299,7 @@ export default function AgentInputBox() {
               onClick={() => {
                 setShowModeMenu(false)
                 setShowModelMenu(false)
+                setShowEffortMenu(false)
                 setShowContextMenu(v => !v)
               }}
             >
@@ -293,6 +313,7 @@ export default function AgentInputBox() {
               onClick={() => {
                 setShowContextMenu(false)
                 setShowModelMenu(false)
+                setShowEffortMenu(false)
                 setShowModeMenu(v => !v)
               }}
               className="flex items-center gap-0.5 py-1 pl-1 pr-1.5 rounded-md text-xs transition-colors"
@@ -351,6 +372,7 @@ export default function AgentInputBox() {
               onClick={() => {
                 setShowContextMenu(false)
                 setShowModeMenu(false)
+                setShowEffortMenu(false)
                 setShowModelMenu(v => !v)
               }}
               className="flex items-center gap-0.5 py-1 pl-0.5 pr-1.5 rounded-md text-xs min-w-0 transition-colors"
@@ -410,6 +432,111 @@ export default function AgentInputBox() {
               </div>
             )}
           </div>
+
+          {/* 推理档位选择（当前模型支持推理时显示） */}
+          {(() => {
+            const model = currentModel
+            if (!model) return null
+            const resolved = resolveModelReasoningMapping(model)
+            if (!resolved) return null
+            const current: ReasoningOverride = model.reasoningOverride ?? 'auto'
+            const effortLabels: Record<ReasoningEffort, string> = {
+              off: text('关闭', 'Off'),
+              low: text('低', 'Low'),
+              medium: text('中', 'Medium'),
+              high: text('高', 'High'),
+              max: text('最高', 'Max'),
+            }
+            const overrideOptions: ReasoningEffort[] = [...resolved.mapping.supportedEfforts]
+            const selectEffort = (value: ReasoningOverride) => {
+              setShowEffortMenu(false)
+              void saveModel({ ...model, reasoningOverride: value })
+            }
+            return (
+              <div ref={effortRef} className="relative flex-shrink-0">
+                <button
+                  onClick={() => {
+                    setShowContextMenu(false)
+                    setShowModeMenu(false)
+                    setShowModelMenu(false)
+                    setShowEffortMenu(v => !v)
+                  }}
+                  className="flex items-center gap-0.5 py-1 px-1 rounded-md text-xs transition-colors"
+                  style={{ color: 'var(--color-text-secondary)', opacity: 0.75 }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.backgroundColor = 'var(--color-hover)'
+                    e.currentTarget.style.opacity = '1'
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.backgroundColor = 'transparent'
+                    e.currentTarget.style.opacity = '0.75'
+                  }}
+                  title={text('推理强度', 'Reasoning effort')}
+                >
+                  <ChevronDown size={13} strokeWidth={1.5} className="flex-shrink-0" />
+                  <span className="select-none whitespace-nowrap">
+                    {current === 'auto'
+                      ? text('推理:自动', 'Reasoning: Auto')
+                      : `${text('推理:', 'Reasoning:')} ${effortLabels[current as ReasoningEffort] ?? current}`}
+                  </span>
+                </button>
+
+                {showEffortMenu && (
+                  <div
+                    className="absolute bottom-full left-0 mb-1 z-50 py-1 rounded-lg shadow-lg"
+                    style={{
+                      width: 210,
+                      backgroundColor: 'var(--color-sidebar)',
+                      border: '1px solid var(--color-border)',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+                    }}
+                  >
+                    <div className="text-[0.7rem] px-3 py-1" style={{ color: 'var(--color-text-muted)' }}>
+                      {text('推理强度', 'Reasoning effort')}
+                    </div>
+                    <button
+                      onClick={() => selectEffort('auto')}
+                      className="w-full text-left px-3 py-1.5 text-xs transition-colors"
+                      style={{ color: current === 'auto' ? 'var(--color-accent)' : 'var(--color-text)' }}
+                      onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-hover)' }}
+                      onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent' }}
+                    >
+                      {text('自动（遵循项目与阶段）', 'Auto (project and stage)')}
+                    </button>
+                    {overrideOptions.map(effort => (
+                      <button
+                        key={effort}
+                        onClick={() => selectEffort(effort)}
+                        className="w-full text-left px-3 py-1.5 text-xs transition-colors"
+                        style={{ color: current === effort ? 'var(--color-accent)' : 'var(--color-text)' }}
+                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-hover)' }}
+                        onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent' }}
+                      >
+                        {effortLabels[effort]}
+                      </button>
+                    ))}
+                    {/* 已保存但不在当前模型支持列表内的覆盖：保留显示，避免静默丢设置 */}
+                    {current !== 'auto' && !overrideOptions.includes(current as ReasoningEffort) && (
+                      <button
+                        onClick={() => selectEffort(current)}
+                        className="w-full text-left px-3 py-1.5 text-xs transition-colors"
+                        style={{ color: 'var(--color-accent)' }}
+                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-hover)' }}
+                        onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent' }}
+                      >
+                        {effortLabels[current as ReasoningEffort] ?? current}
+                      </button>
+                    )}
+                    {resolved.origin === 'family' && (
+                      <div className="px-3 py-1 text-[0.65rem]" style={{ color: 'var(--color-text-muted)' }}>
+                        {text('档位按模型家族推断', 'Inferred from model family')}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
         </div>
 
         {/* 右侧：发送/停止 */}
